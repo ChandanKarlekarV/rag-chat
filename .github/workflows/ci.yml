@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Action versions from the actions/checkout and actions/setup-python READMEs (v7).
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install
+        run: pip install -r requirements.lock
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Contrast (WCAG AA tokens)
+        run: python scripts/check_contrast.py
+      - name: No gradients in the UI
+        run: "! grep -rni gradient app/static"
+      - name: Tests (deprecations are errors)
+        run: pytest -W error::DeprecationWarning

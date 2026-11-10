@@ -1,3 +1,4 @@
+# python:3.11-slim: the image tag the architecture specifies (Python 3.11 runtime).
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -10,9 +11,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Dependencies first for layer caching. torch comes from the CPU-only index (much smaller image).
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Install the exact, tested versions. torch resolves to the CPU-only wheel (smaller image).
+COPY requirements.lock .
+RUN pip install -r requirements.lock
 
 # Bake both models into the image so the container starts fast and works offline.
 ARG EMBED_MODEL=BAAI/bge-small-en-v1.5

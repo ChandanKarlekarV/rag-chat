@@ -10,6 +10,7 @@ services:
         required: false
     environment:
       DATA_DIR: /app/data
+      DATABASE_URL: sqlite:////app/data/app.db
     volumes:
       - ./data:/app/data
     restart: unless-stopped
