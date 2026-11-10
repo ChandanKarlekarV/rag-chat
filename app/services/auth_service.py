@@ -122,6 +122,18 @@ class AuthService:
             log.info("expired guests removed", extra={"count": len(ids)})
         return len(ids)
 
+    def set_preferences(self, user_id: str, default_mode: str | None, ollama_model: str | None) -> User:
+        """Save the default answer mode and/or Ollama model. API keys are never stored."""
+        with self.db.session() as s:
+            user = UserRepo(s).get(user_id)
+            if user is None:
+                raise Unauthorized("not_signed_in", "Please sign in to continue.")
+            if default_mode is not None:
+                user.preferred_mode = default_mode
+            if ollama_model is not None:
+                user.ollama_model = ollama_model.strip() or None
+        return user
+
     def delete_user(self, user_id: str) -> None:
         """Remove a user and everything they own (rows, vectors, BM25, files)."""
         self.ingest.purge_user(user_id)

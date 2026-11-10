@@ -18,15 +18,22 @@ class Settings(BaseSettings):
     database_url: str = ""  # empty -> sqlite file inside data_dir
     data_dir: Path = Path("./data")
 
-    anthropic_api_key: str = ""  # optional shared key; users can bring their own in the UI
-    # "auto": Claude when a key is available (user's or server's), else the local reader.
-    # "anthropic": Claude only. "local": local reader only. "fake": deterministic test double.
-    llm_provider: str = "auto"
-    # Most accurate on our eval (see README). Faster, lighter option: deepset/deberta-v3-base-squad2.
-    reader_model: str = "deepset/deberta-v3-large-squad2"
-    # Reader confidence (span score - no-answer score + rerank weighting); tuned by scripts/evaluate.py.
-    reader_min_score: float = -3.0
-    reader_rerank_weight: float = 1.0
+    # --- answer modes (ANSWER_MODES.md) ---
+    # Local (extractive) mode. Most accurate on our eval (see README); smaller options:
+    # deepset/roberta-base-squad2, distilbert-base-cased-distilled-squad (no "no answer" training).
+    qa_model: str = "deepset/deberta-v3-large-squad2"
+    min_qa_score: float = 0.05  # probability that the span beats "no answer"; tuned by scripts/evaluate.py
+    qa_weight: float = 0.6  # span score = QA_WEIGHT * qa_score + (1 - QA_WEIGHT) * normalized rerank score
+    max_sentences: int = 3  # supporting sentences quoted under the answer
+    load_local_model: bool = True  # False skips loading the QA model (Local mode then unavailable)
+
+    # Ollama mode (optional; the app checks whether it's reachable).
+    ollama_base_url: str = "http://localhost:11434"  # in Docker: http://host.docker.internal:11434
+    ollama_model: str = "llama3.2"
+    ollama_enabled: bool = True
+
+    # API mode. Optional shared key; users can paste their own in Settings (never stored server-side).
+    anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5-5"  # verified on platform.claude.com models overview
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0

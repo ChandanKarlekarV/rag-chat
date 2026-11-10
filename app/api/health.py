@@ -31,7 +31,6 @@ def health(c: Container = Depends(get_container)) -> HealthResponse:
         database=db_ok,
         redis=redis_ok,
         models_loaded=c.models_loaded,
-        llm_configured=c.server_llm is not None or c.local is not None,
-        llm_provider=c.settings.llm_provider,
-        llm_model=c.settings.llm_model,
+        local_model=c.router.local.name if c.router.local else None,
+        server_key=bool(c.settings.anthropic_api_key),
     )

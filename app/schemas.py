@@ -48,6 +48,7 @@ class Citation(BaseModel):
     page_end: int
     snippet: str  # first ~300 chars, for compact previews
     text: str  # full chunk text, shown in the source drawer
+    highlight: list[int] | None = None  # [start, end) of the extracted answer span inside 	ext, if any
     vector_score: float | None = None
     bm25_score: float | None = None
     rrf_score: float | None = None
@@ -55,6 +56,8 @@ class Citation(BaseModel):
 
 
 # ---------- auth ----------
+
+ModeChoice = Literal["auto", "local", "ollama", "api"]
 
 
 class Credentials(BaseModel):
@@ -72,6 +75,15 @@ class UserOut(BaseModel):
     id: str
     email: str
     is_guest: bool
+    preferred_mode: ModeChoice = "auto"
+    ollama_model: str | None = None
+
+
+class PreferencesIn(BaseModel):
+    """Body of `PUT /me/preferences` (the API key is never stored server-side)."""
+
+    default_mode: ModeChoice | None = None
+    ollama_model: str | None = Field(default=None, max_length=120)
 
 
 # ---------- documents ----------
@@ -115,6 +127,7 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = None
     doc_ids: list[str] | None = None
+    mode: Literal["local", "ollama", "api"] | None = None  # None = saved default, else auto
 
 
 class MessageOut(BaseModel):
@@ -125,6 +138,8 @@ class MessageOut(BaseModel):
     content: str
     answerable: bool | None = None
     citations: list[Citation] = []
+    mode: str | None = None
+    label: str | None = None
     created_at: datetime
 
 
@@ -150,13 +165,30 @@ class RenameRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
 
 
-class LLMCheckResponse(BaseModel):
-    """Result of `POST /llm/check`."""
+class ModeOut(BaseModel):
+    """One answer mode and whether it can run now."""
+
+    mode: Literal["local", "ollama", "api"]
+    title: str
+    available: bool
+    reason: str
+    description: str
+
+
+class ModesResponse(BaseModel):
+    """Result of `GET /chat/modes`."""
+
+    modes: list[ModeOut]
+    recommended: Literal["local", "ollama", "api"]
+    default_mode: ModeChoice
+    ollama_models: list[str]
+    ollama_model: str
+
+
+class TestKeyResponse(BaseModel):
+    """Result of `POST /chat/test-key`."""
 
     ok: bool
-    source: Literal["browser", "server", "local", "none"]
-    provider: str
-    model: str
     message: str
 
 
@@ -167,6 +199,5 @@ class HealthResponse(BaseModel):
     database: bool
     redis: bool | None = None  # None when Redis isn't configured
     models_loaded: bool
-    llm_configured: bool  # True when the server has its own key (or the fake provider)
-    llm_provider: str
-    llm_model: str
+    local_model: str | None  # the extractive QA model, when loaded
+    server_key: bool  # the server has its own ANTHROPIC_API_KEY

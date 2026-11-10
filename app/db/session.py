@@ -37,9 +37,11 @@ class Database:
         cfg.set_main_option("script_location", str(ROOT / "migrations"))
         with self.engine.begin() as conn:
             cfg.attributes["connection"] = conn
-            tables = set(inspect(conn).get_table_names())
+            insp = inspect(conn)
+            tables = set(insp.get_table_names())
             if "users" in tables and "alembic_version" not in tables:
-                command.stamp(cfg, "0001")
+                user_columns = {c["name"] for c in insp.get_columns("users")}
+                command.stamp(cfg, "0002" if "preferred_mode" in user_columns else "0001")
             command.upgrade(cfg, "head")
 
     @contextmanager

@@ -49,6 +49,10 @@ class FakeReader:
 class FakeReranker:
     """Scores by query-term overlap, shifted so zero overlap is clearly negative."""
 
+    def score(self, question: str, passages: list[str]) -> list[float]:
+        q = set(tokenize(question))
+        return [float(len(q & set(tokenize(p)))) - 1.0 for p in passages]
+
     def rerank(self, question: str, candidates: list[RetrievedChunk], top_k: int) -> list[RetrievedChunk]:
         q = set(tokenize(question))
         scored = [

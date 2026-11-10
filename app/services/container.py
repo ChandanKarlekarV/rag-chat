@@ -7,15 +7,17 @@ from typing import Any, Protocol
 
 from app.config import Settings
 from app.db.session import Database
-from app.generation.answerer import Answerer, LLMAnswerer, LocalAnswerer, SpanReader
-from app.generation.factory import make_llm
+from app.generation.base import AnswerMode
+from app.generation.extractive import LocalExtractiveProvider, SentenceScorer, SpanReader
+from app.generation.llm_anthropic import AnthropicLLM
 from app.generation.llm_base import LLMClient
-from app.generation.rewrite import HeuristicRewriter, LLMRewriter, QueryRewriter
+from app.generation.ollama import OllamaLLM
+from app.generation.router import AnswerRouter
 from app.retrieval.bm25_store import BM25Store
 from app.retrieval.hybrid import ChunkReranker, HybridRetriever, QueryEmbedder
 from app.retrieval.vector_store import VectorStore
 from app.services.auth_service import AuthService
-from app.services.chat_service import ChatService
+from app.services.chat_service import ChatService, Engine
 from app.services.coordination import MemoryLocks, MemoryProgress, RedisLocks, RedisProgress
 from app.services.ingest_service import DocEmbedder, IngestService
 from app.services.rate_limit import MemoryRateLimiter, RateLimiter, RedisRateLimiter
@@ -25,19 +27,17 @@ ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_PDF = ROOT / "samples" / "halcyon_h2_handbook.pdf"
 
 LLMFactory = Callable[[str], LLMClient]
+OllamaFactory = Callable[[str], OllamaLLM]
 
 
 class Embedder(QueryEmbedder, DocEmbedder, Protocol):
     """Structural type: something that embeds both queries and documents."""
 
 
-@dataclass(frozen=True)
-class Engine:
-    """How a request will be answered."""
+class ScoringReranker(ChunkReranker, Protocol):
+    """A reranker that can also score raw sentences (used for supporting sentences)."""
 
-    answerer: Answerer | None
-    rewriter: QueryRewriter
-    source: str  # "browser" | "server" | "local" | "none"
+    def score(self, question: str, passages: list[str]) -> list[float]: ...
 
 
 @dataclass
@@ -50,57 +50,42 @@ class Container:
     ingest: IngestService
     retrieval: RetrievalService
     chat: ChatService
-    llm_factory: LLMFactory
+    router: AnswerRouter
     auth_limiter: RateLimiter
     ask_limiter: RateLimiter
-    server_llm: LLMClient | None = None
-    local: LocalAnswerer | None = None
     redis: Any = None
     models_loaded: bool = True
 
-    def engine(self, user_key: str | None) -> Engine:
-        """Pick the answerer for this request.
-
-        A key sent by the browser always wins (Claude). Otherwise the server's own key, then the
-        local reader, depending on `LLM_PROVIDER`.
-        """
-        provider = self.settings.llm_provider
-        key = (user_key or "").strip()
-        if provider == "local":
-            return self._local()
-        if key and provider in ("auto", "anthropic"):
-            llm = self.llm_factory(key)
-            return Engine(LLMAnswerer(llm), LLMRewriter(llm), "browser")
-        if self.server_llm is not None:
-            return Engine(LLMAnswerer(self.server_llm), LLMRewriter(self.server_llm), "server")
-        if provider == "auto":
-            return self._local()
-        return Engine(None, HeuristicRewriter(), "none")
-
-    def _local(self) -> Engine:
-        return Engine(self.local, HeuristicRewriter(), "local" if self.local else "none")
+    def engine(
+        self, user_key: str | None, requested: str | None, preferred: str | None, ollama_model: str | None
+    ) -> Engine:
+        """Resolve the answer mode for one request into what the chat service needs."""
+        pref = AnswerMode(preferred) if preferred in ("local", "ollama", "api") else None
+        choice = self.router.pick(AnswerMode(requested) if requested else None, user_key, pref, ollama_model)
+        return Engine(choice.mode.value, choice.provider, choice.rewriter, choice.error_code, choice.error_message)
 
 
 def build_container(
     settings: Settings,
     embedder: Embedder | None = None,
-    reranker: ChunkReranker | None = None,
+    reranker: ScoringReranker | None = None,
     llm_factory: LLMFactory | None = None,
     reader: SpanReader | None = None,
     sample_pdf: Path = SAMPLE_PDF,
     redis_client: Any = None,
+    ollama_factory: OllamaFactory | None = None,
 ) -> Container:
-    """Wire the app. Tests pass light fakes for the models, the reader and the LLM factory."""
+    """Wire the app. Tests pass light fakes for the models, the reader and the LLM/Ollama factories."""
     if embedder is None or reranker is None:
         from app.retrieval.embedder import get_embedder  # heavy imports only when real models are used
         from app.retrieval.reranker import get_reranker
 
         embedder = embedder or get_embedder(settings.embed_model)
         reranker = reranker or get_reranker(settings.rerank_model)
-    if reader is None and settings.llm_provider in ("auto", "local"):
+    if reader is None and settings.load_local_model:
         from app.generation.reader import get_reader
 
-        reader = get_reader(settings.reader_model)
+        reader = get_reader(settings.qa_model)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(settings.sqlalchemy_url)
     db.migrate()
@@ -121,15 +106,21 @@ def build_container(
     ingest = IngestService(db, vectors, bm25, embedder, settings, progress, locks)
     retriever = HybridRetriever(embedder, vectors, bm25, reranker, settings.retrieve_k, settings.rrf_k)
     retrieval = RetrievalService(retriever, settings.final_k)
-    factory = llm_factory or (lambda key: make_llm(settings, key))
-    server_llm = None
-    if settings.llm_provider == "fake" or settings.anthropic_api_key:
-        server_llm = factory(settings.anthropic_api_key)
+
+    scorer: SentenceScorer = reranker.score
     local = (
-        LocalAnswerer(reader, settings.reader_model, settings.reader_min_score, settings.reader_rerank_weight)
+        LocalExtractiveProvider(
+            reader, settings.qa_model, scorer, settings.min_qa_score, settings.qa_weight, settings.max_sentences
+        )
         if reader is not None
         else None
     )
+    api_factory = llm_factory or (
+        lambda key: AnthropicLLM(key, settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s)
+    )
+    if ollama_factory is None and settings.ollama_enabled:
+        ollama_factory = lambda model: OllamaLLM(settings.ollama_base_url, model)  # noqa: E731
+    router = AnswerRouter(local, api_factory, settings.anthropic_api_key, ollama_factory, settings.ollama_model)
     return Container(
         settings=settings,
         db=db,
@@ -137,10 +128,8 @@ def build_container(
         ingest=ingest,
         retrieval=retrieval,
         chat=ChatService(db, retrieval, settings.min_rerank_score),
-        llm_factory=factory,
+        router=router,
         auth_limiter=auth_limiter,
         ask_limiter=ask_limiter,
         redis=redis_client,
-        server_llm=server_llm,
-        local=local,
     )

@@ -2,7 +2,6 @@
 
 import pytest
 
-from app.generation.llm_fake import FakeLLM
 from app.generation.prompt import build_user_prompt, cited_numbers, could_become_no_answer, is_no_answer
 from app.retrieval.bm25_store import BM25Store, tokenize
 from app.retrieval.hybrid import rrf_fuse
@@ -130,9 +129,3 @@ def test_extract_citations_ignores_out_of_range():
 def test_prompt_marks_sources_as_untrusted_data():
     prompt = build_user_prompt("q?", [_rc(0, 1.0, page=3)])
     assert "untrusted" in prompt and "<sources>" in prompt and "[1] (f.pdf, p.3)" in prompt
-
-
-def test_fake_llm_is_extractive_and_cites_source_one():
-    prompt = build_user_prompt("q?", [_rc(0, 1.0), _rc(1, 1.0)])
-    answer = "".join(FakeLLM().stream("sys", prompt))
-    assert answer.endswith("[1]") and "chunk text 0" in answer

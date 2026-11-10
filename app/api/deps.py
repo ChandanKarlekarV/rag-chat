@@ -9,7 +9,7 @@ from app.services.container import Container
 SESSION_COOKIE = "rag_session"
 CSRF_HEADER = "X-Requested-With"
 CSRF_VALUE = "fetch"
-API_KEY_HEADER = "X-Anthropic-Api-Key"
+API_KEY_HEADER = "X-LLM-Key"  # user-pasted key; never stored or logged
 
 
 def get_container(request: Request) -> Container:

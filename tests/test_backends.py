@@ -147,7 +147,41 @@ def test_migrations_create_schema_and_are_idempotent(tmp_path):
     tables = set(inspect(db.engine).get_table_names())
     assert {"users", "documents", "conversations", "messages", "alembic_version"} <= tables
     with db.engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0001"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0002"
+    cols = {c["name"] for c in inspect(db.engine).get_columns("messages")}
+    assert {"mode", "label"} <= cols
+
+
+def test_unversioned_v1_schema_is_upgraded_with_data_kept(tmp_path):
+    """A database at the 0001 schema without alembic_version (pre-migration era) gains the 0002 columns."""
+    url = f"sqlite:///{(tmp_path / 'v1.db').as_posix()}"
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE users (id VARCHAR(32) PRIMARY KEY, email VARCHAR(320) UNIQUE NOT NULL, "
+                "password_hash VARCHAR(255) NOT NULL, is_guest BOOLEAN NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE conversations (id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(32) NOT NULL, "
+                "title VARCHAR(120) NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE messages (id VARCHAR(32) PRIMARY KEY, conversation_id VARCHAR(32) NOT NULL, "
+                "role VARCHAR(16) NOT NULL, content TEXT NOT NULL, answerable BOOLEAN, citations_json TEXT, "
+                "created_at DATETIME NOT NULL)"
+            )
+        )
+        conn.execute(text("INSERT INTO users VALUES ('u1', 'old@example.com', 'x', 0, '2026-01-01 00:00:00')"))
+    Database(url).migrate()
+    db = Database(url)
+    with db.session() as s:
+        user = UserRepo(s).by_email("old@example.com")
+        assert user is not None and user.preferred_mode == "auto"  # data kept, new column defaulted
 
 
 def test_legacy_create_all_database_is_stamped_not_recreated(tmp_path):

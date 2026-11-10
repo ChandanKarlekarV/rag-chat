@@ -1,4 +1,4 @@
-"""Chat routes: ask (SSE), conversations, and the API-key check."""
+"""Chat routes: ask (SSE), answer modes, key test, and conversations."""
 
 import json
 import logging
@@ -9,8 +9,16 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import API_KEY_HEADER, get_container, get_current_user, require_fetch_header
 from app.db.models import User
-from app.generation.llm_base import LLMError
-from app.schemas import AskRequest, ConversationDetail, ConversationOut, LLMCheckResponse, RenameRequest
+from app.generation.anthropic import AnthropicProvider
+from app.schemas import (
+    AskRequest,
+    ConversationDetail,
+    ConversationOut,
+    ModeOut,
+    ModesResponse,
+    RenameRequest,
+    TestKeyResponse,
+)
 from app.services.container import Container
 
 router = APIRouter(tags=["chat"])
@@ -29,12 +37,10 @@ def ask(
     c: Container = Depends(get_container),
     user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
 ) -> StreamingResponse:
-    """Stream an answer as SSE events: `token`*, `citations`, `done` (or `error`)."""
+    """Stream an answer as SSE events: `mode`, `rewrite`?, `token`*, `citations`, `done` (or `error`)."""
     c.ask_limiter.hit(f"ask:{user.id}", "You're asking very quickly. Please wait a moment and try again.")
-    engine = c.engine(user_key)
-    events = c.chat.ask(  # validates eagerly, streams lazily
-        user, body.question, engine.answerer, body.conversation_id, body.doc_ids, engine.rewriter
-    )
+    engine = c.engine(user_key, body.mode, user.preferred_mode, user.ollama_model)
+    events = c.chat.ask(user, body.question, engine, body.conversation_id, body.doc_ids)  # validates eagerly
 
     def stream() -> Iterator[str]:
         try:
@@ -46,6 +52,40 @@ def ask(
 
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)
+
+
+@router.get("/chat/modes", response_model=ModesResponse)
+def modes(
+    user: User = Depends(get_current_user),
+    c: Container = Depends(get_container),
+    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+) -> ModesResponse:
+    """Each answer mode with availability and reason, the recommended one, and installed Ollama models."""
+    infos = c.router.modes(user_key)
+    return ModesResponse(
+        modes=[
+            ModeOut(mode=m.mode.value, title=m.title, available=m.available, reason=m.reason, description=m.description)
+            for m in infos
+        ],
+        recommended=c.router.recommended(user_key).value,
+        default_mode=user.preferred_mode,  # type: ignore[arg-type]
+        ollama_models=c.router.ollama_status().models,
+        ollama_model=user.ollama_model or c.settings.ollama_model,
+    )
+
+
+@router.post("/chat/test-key", response_model=TestKeyResponse, dependencies=[Depends(require_fetch_header)])
+def test_key(
+    user: User = Depends(get_current_user),
+    c: Container = Depends(get_container),
+    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+) -> TestKeyResponse:
+    """Validate a pasted key (sent in the header, never stored) with the free Models API."""
+    key = (user_key or "").strip()
+    if not key:
+        return TestKeyResponse(ok=False, message="Paste your API key first.")
+    ok, message = AnthropicProvider(c.router.api_factory(key)).is_available()
+    return TestKeyResponse(ok=ok, message="It works. Claude API mode is ready." if ok else message)
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
@@ -79,34 +119,3 @@ def delete_conversation(
     """Delete a conversation and its messages."""
     c.chat.delete(user.id, conv_id)
     return Response(status_code=204)
-
-
-@router.post("/llm/check", response_model=LLMCheckResponse, dependencies=[Depends(require_fetch_header)])
-def llm_check(
-    user: User = Depends(get_current_user),
-    c: Container = Depends(get_container),
-    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
-) -> LLMCheckResponse:
-    """Which engine will answer, and does it work? Keys are checked with the free Models API."""
-    engine = c.engine(user_key)
-    if engine.answerer is None:
-        return LLMCheckResponse(ok=False, source="none", provider="none", model="", message="No API key added yet.")
-    try:
-        engine.answerer.check()
-    except LLMError as exc:
-        return LLMCheckResponse(
-            ok=False,
-            source=engine.source,
-            provider=engine.answerer.provider,  # type: ignore[arg-type]
-            model=engine.answerer.model,
-            message=str(exc),
-        )
-    labels = {"local": "the built-in local model (no key needed)", "fake": "the offline demo model"}
-    label = labels.get(engine.answerer.provider, engine.answerer.model)
-    return LLMCheckResponse(
-        ok=True,
-        source=engine.source,
-        provider=engine.answerer.provider,  # type: ignore[arg-type]
-        model=engine.answerer.model,
-        message=f"Answering with {label}.",
-    )

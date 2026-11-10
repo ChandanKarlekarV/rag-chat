@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from app.api.deps import SESSION_COOKIE, client_ip, get_container, get_current_user, require_fetch_header
 from app.db.models import User
 from app.errors import AppError
-from app.schemas import Credentials, UserOut
+from app.schemas import Credentials, PreferencesIn, UserOut
 from app.services.container import Container
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -67,5 +67,16 @@ def logout(response: Response, request: Request, c: Container = Depends(get_cont
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> User:
-    """The signed-in user."""
+    """The signed-in user (with their answer-mode preferences)."""
     return user
+
+
+me_router = APIRouter(prefix="/me", tags=["auth"])
+
+
+@me_router.put("/preferences", response_model=UserOut, dependencies=[Depends(require_fetch_header)])
+def preferences(
+    body: PreferencesIn, user: User = Depends(get_current_user), c: Container = Depends(get_container)
+) -> User:
+    """Save the default answer mode and Ollama model. Never the API key."""
+    return c.auth.set_preferences(user.id, body.default_mode, body.ollama_model)

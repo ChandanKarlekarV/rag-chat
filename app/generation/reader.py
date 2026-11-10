@@ -11,7 +11,6 @@ transformers 5.22.2) rather than the `pipeline` helper, so span scoring and the 
 explicit and testable.
 """
 
-import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -22,8 +21,6 @@ from app.schemas import RetrievedChunk
 
 MAX_ANSWER_TOKENS = 30
 TOP_CANDIDATES = 20
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-_YES_NO = re.compile(r"^(can|could|does|do|did|is|are|was|were|should|will|would|may|must|has|have)\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -92,41 +89,6 @@ def _best_span(start: torch.Tensor, end: torch.Tensor, allowed: set[int]) -> tup
                 if best is None or score > best[0]:
                     best = (score, a, b)
     return best
-
-
-def sentence_around(text: str, start: int, end: int, extra: int = 0) -> tuple[str, int, int]:
-    """The sentence(s) of `text` containing [start, end) plus `extra` following sentences,
-    and the span offsets inside the returned text."""
-    while start < end and text[start].isspace():  # tokenizers often include the leading space
-        start += 1
-    bounds = [0] + [m.end() for m in _SENTENCE_END.finditer(text)] + [len(text)]
-    s_start = max(b for b in bounds if b <= start)
-    after = [b for b in bounds if b >= end]
-    s_end = after[min(extra, len(after) - 1)]
-    sentence = text[s_start:s_end]
-    lead = len(sentence) - len(sentence.lstrip())
-    sentence = sentence.strip()
-    return sentence, start - s_start - lead, end - s_start - lead
-
-
-def is_yes_no(question: str) -> bool:
-    """Questions like "Can I…?" / "Does it…?" whose answer often lies in the qualifying next sentence."""
-    return bool(_YES_NO.match(question.strip()))
-
-
-def format_answer(span: Span, sources: list[RetrievedChunk], question: str = "") -> str:
-    """Quote the supporting sentence verbatim (plus the next one for yes/no questions),
-    bold the answer span, and cite the source."""
-    text = sources[span.source - 1].chunk.text
-    sentence, a, b = sentence_around(text, span.start, span.end, extra=1 if is_yes_no(question) else 0)
-    if 0 <= a < b <= len(sentence):
-        inner = sentence[a:b]
-        core = inner.strip()
-        if core:  # keep surrounding whitespace outside the bold markers
-            lead = inner[: len(inner) - len(inner.lstrip())]
-            trail = inner[len(inner.rstrip()) :]
-            sentence = f"{sentence[:a]}{lead}**{core}**{trail}{sentence[b:]}"
-    return f"{sentence} [{span.source}]"
 
 
 @lru_cache

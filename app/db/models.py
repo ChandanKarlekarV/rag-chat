@@ -46,6 +46,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Preferences (never the API key): "auto" | "local" | "ollama" | "api", and the Ollama model to use.
+    preferred_mode: Mapped[str] = mapped_column(String(16), default="auto", server_default="auto")
+    ollama_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     documents: Mapped[list["Document"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -97,6 +100,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     answerable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     citations_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)  # answer mode used (assistant only)
+    label: Mapped[str | None] = mapped_column(String(160), nullable=True)  # e.g. "Extractive · quoted from …"
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

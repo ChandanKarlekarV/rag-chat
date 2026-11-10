@@ -89,7 +89,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         log.exception("unhandled error")
         return _error(500, "internal", "Something went wrong on our side. Please try again.")
 
-    for router in (auth.router, documents.router, chat.router, health.router):
+    for router in (auth.router, auth.me_router, documents.router, chat.router, health.router):
         app.include_router(router)
 
     @app.get("/", include_in_schema=False)

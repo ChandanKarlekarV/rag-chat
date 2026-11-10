@@ -8,7 +8,7 @@ grades it against the reference facts and the cited passages:
 * refusal   - for unanswerable questions, did the system say it couldn't find the answer?
 
 Requires an Anthropic API key (it makes paid calls): ANTHROPIC_API_KEY=... python scripts/judge.py
-Options: --answerer local|claude  (which engine answers; the judge is always Claude)
+Options: --answerer local|ollama|api  (which mode answers; the judge is always Claude)
          --judge-model MODEL       (default claude-opus-5-5)
          --limit N                 (only the first N questions, to try it cheaply)
 """
@@ -28,10 +28,11 @@ sys.path.insert(0, str(ROOT))
 from app.config import Settings
 from app.db.models import User
 from app.db.repositories import UserRepo
-from app.generation.answerer import Answerer, LLMAnswerer
+from app.generation.base import AnswerMode, AnswerProvider
 from app.generation.llm_anthropic import AnthropicLLM
 from app.generation.llm_base import LLMClient, LLMError
 from app.generation.prompt import cited_numbers, is_no_answer
+from app.generation.question_type import classify
 from app.schemas import RetrievedChunk
 from app.services.container import build_container
 from app.services.retrieval_service import passes_gate
@@ -91,12 +92,15 @@ def summarize(rows: list[tuple[dict, Verdict]]) -> dict[str, float]:
     }
 
 
-def run_pipeline(c, answerer: Answerer, user_id: str, question: str, gate: float) -> tuple[str, list[RetrievedChunk]]:
+def run_pipeline(
+    c, provider: AnswerProvider, user_id: str, question: str, gate: float
+) -> tuple[str, list[RetrievedChunk]]:
     """Answer one question like the app does; returns (answer text, cited passages)."""
     sources = c.retrieval.search(user_id, question).chunks
     if not passes_gate(sources, gate):
         return "I couldn't find this in your documents.", []
-    text = "".join(answerer.stream(question, sources)).strip()
+    events = provider.answer(question, sources, classify(question))
+    text = "".join(e.text for e in events if e.kind == "token").strip()
     if is_no_answer(text):
         return "I couldn't find this in your documents.", []
     cited = [sources[n - 1] for n in cited_numbers(text) if 1 <= n <= len(sources)]
@@ -105,7 +109,7 @@ def run_pipeline(c, answerer: Answerer, user_id: str, question: str, gate: float
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--answerer", choices=["local", "claude"], default="local")
+    parser.add_argument("--answerer", choices=["local", "ollama", "api"], default="local")
     parser.add_argument("--judge-model", default="claude-opus-5-5")
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
@@ -118,10 +122,13 @@ def main() -> int:
     questions = spec["questions"][: args.limit or None]
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        provider = "local" if args.answerer == "local" else "anthropic"
-        settings = Settings(data_dir=Path(tmp), database_url="", llm_provider=provider, anthropic_api_key=key)
+        settings = Settings(data_dir=Path(tmp), database_url="", anthropic_api_key=key)
         c = build_container(settings)
-        answerer = c.local if args.answerer == "local" else LLMAnswerer(c.server_llm)  # type: ignore[arg-type]
+        choice = c.router.pick(AnswerMode(args.answerer), key)
+        if choice.provider is None:
+            print(choice.error_message, file=sys.stderr)
+            return 2
+        answerer: AnswerProvider = choice.provider
         judge: LLMClient = AnthropicLLM(key, args.judge_model)
         with c.db.session() as s:
             user = UserRepo(s).add(User(email="judge@example.com", password_hash="-"))

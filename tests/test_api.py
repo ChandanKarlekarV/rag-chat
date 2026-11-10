@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.db.models import User
 from app.db.repositories import UserRepo
-from tests.conftest import CSRF, GOOD_KEY, ask, make_harness, register, upload
+from tests.conftest import CSRF, ask, make_harness, register, upload
 
 QUESTION = "How much usable energy capacity does the battery have?"
 
@@ -164,7 +164,8 @@ def test_ask_streams_answer_with_citations_and_persists(h, sample_pdf):
     upload(c, sample_pdf)
     events = ask(c, QUESTION)
     names = [e for e, _ in events]
-    assert names[0] == "token" and names[-2:] == ["citations", "done"]
+    assert names[0] == "mode" and names[1] == "token" and names[-2:] == ["citations", "done"]
+    assert events[0][1]["mode"] == "api"  # a key was sent, so auto-selection picked API mode
     streamed = "".join(d["text"] for e, d in events if e == "token")
     citations = events[-2][1]["citations"]
     done = events[-1][1]
@@ -188,16 +189,16 @@ def test_unanswerable_question_falls_back_without_calling_llm(h, sample_pdf):
     register(c)
     upload(c, sample_pdf)
     events = ask(c, "chocolate cookie recipe")
-    assert [e for e, _ in events] == ["citations", "done"]
+    assert [e for e, _ in events] == ["mode", "citations", "done"]
     assert events[-1][1]["answerable"] is False
     assert h.made == [] or all(llm.calls == [] for llm in h.made)
 
 
-def test_ask_without_any_key_explains_what_to_do(h, sample_pdf):
+def test_api_mode_without_a_key_explains_what_to_do(h, sample_pdf):
     c = h.client
     register(c)
     upload(c, sample_pdf)
-    name, data = ask(c, QUESTION, key=None)[-1]
+    name, data = ask(c, QUESTION, key=None, mode="api")[-1]
     assert name == "error" and data["code"] == "no_api_key" and "Settings" in data["message"]
 
 
@@ -245,62 +246,7 @@ def test_user_b_cannot_see_or_retrieve_user_a_documents(h, sample_pdf):
     assert retrieval.search(alice_id, QUESTION).chunks
 
 
-# ---------- llm check & health ----------
-
-
-def test_llm_check_sources(h, tmp_path, sample_pdf):
-    c = h.client
-    register(c)
-    assert c.post("/llm/check", headers=CSRF).json()["source"] == "none"
-    good = c.post("/llm/check", headers=CSRF | {"X-Anthropic-Api-Key": GOOD_KEY}).json()
-    assert good["ok"] is True and good["source"] == "browser"
-    bad = c.post("/llm/check", headers=CSRF | {"X-Anthropic-Api-Key": "sk-ant-wrong"}).json()
-    assert bad["ok"] is False and "rejected" in bad["message"]
-
-
-def test_server_key_used_when_browser_sends_none(tmp_path, sample_pdf):
-    for harness in make_harness(tmp_path, sample_pdf, server_key="server-key"):
-        c = harness.client
-        register(c)
-        r = c.post("/llm/check", headers=CSRF).json()
-        assert r["ok"] is True and r["source"] == "server"
-
-
-def test_auto_mode_answers_locally_without_any_key(tmp_path, sample_pdf):
-    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
-        c = harness.client
-        register(c)
-        upload(c, sample_pdf)
-        check = c.post("/llm/check", headers=CSRF).json()
-        assert check["ok"] is True and check["source"] == "local" and "no key needed" in check["message"]
-        events = ask(c, QUESTION, key=None)
-        done = events[-1][1]
-        assert done["answerable"] is True and "**" in done["answer"] and done["answer"].endswith("]")
-        cited = events[-2][1]["citations"]
-        assert cited and cited[0]["text"].replace(" ", "").find(done["answer"].split("**")[1].replace(" ", "")) >= 0
-        assert harness.made == []  # Claude was never called
-
-
-def test_auto_mode_uses_claude_when_the_user_adds_a_key(tmp_path, sample_pdf):
-    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
-        c = harness.client
-        register(c)
-        upload(c, sample_pdf)
-        assert c.post("/llm/check", headers=CSRF | {"X-Anthropic-Api-Key": GOOD_KEY}).json()["source"] == "browser"
-        done = ask(c, QUESTION, key=GOOD_KEY)[-1][1]
-        assert done["answer"].startswith("The battery stores 11.2 kWh") and len(harness.made) == 2
-
-
-def test_follow_up_question_is_rewritten_for_search(tmp_path, sample_pdf):
-    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
-        c = harness.client
-        register(c)
-        upload(c, sample_pdf)
-        first = ask(c, QUESTION, key=None)[-1][1]
-        events = ask(c, "And how heavy is it?", key=None, conversation_id=first["conversation_id"])
-        rewrites = [d for e, d in events if e == "rewrite"]
-        assert rewrites and "usable" in rewrites[0]["search_query"]
-        assert rewrites[0]["question"] == "And how heavy is it?"
+# ---------- health ----------
 
 
 def test_health_and_index(h):
