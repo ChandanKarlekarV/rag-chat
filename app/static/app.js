@@ -7,13 +7,19 @@ const state = {
   debug: false,
   busy: false,
   controller: null,
+  memoryKey: "", // fallback when browser storage is blocked
+  llm: null, // last /llm/check result
 };
 
 const $ = (id) => document.getElementById(id);
 const els = {
   fileInput: $("fileInput"), dropzone: $("dropzone"), uploads: $("uploads"),
   docList: $("docList"), docCount: $("docCount"), scopeHint: $("scopeHint"),
-  debugToggle: $("debugToggle"), health: $("health"),
+  debugToggle: $("debugToggle"), keyStatus: $("keyStatus"), openKey: $("openKey"),
+  keyModal: $("keyModal"), keyForm: $("keyForm"), keyInput: $("keyInput"), keyReveal: $("keyReveal"),
+  keyRemember: $("keyRemember"), keyResult: $("keyResult"), keyRemove: $("keyRemove"), keyTest: $("keyTest"),
+  keySave: $("keySave"), keyClose: $("keyClose"), keyBanner: $("keyBanner"), keyBannerText: $("keyBannerText"),
+  keyBannerBtn: $("keyBannerBtn"),
   messages: $("messages"), thread: $("thread"), emptyState: $("emptyState"), suggestions: $("suggestions"),
   form: $("askForm"), question: $("question"), sendBtn: $("sendBtn"), sendLabel: $("sendLabel"), sendIcon: $("sendIcon"),
   drawer: $("drawer"), drawerBackdrop: $("drawerBackdrop"), drawerClose: $("drawerClose"),
@@ -61,18 +67,148 @@ async function apiError(res) {
   return `Request failed (${res.status}).`;
 }
 
-/* ===================== health ===================== */
-async function refreshHealth() {
+/* ===================== API key ===================== */
+const KEY_STORE = "rag-anthropic-key";
+
+function storage(kind) {
+  try { return kind === "local" ? window.localStorage : window.sessionStorage; } catch (_) { return null; }
+}
+
+function getKey() {
+  for (const kind of ["session", "local"]) {
+    try { const v = storage(kind)?.getItem(KEY_STORE); if (v) return v; } catch (_) { /* blocked */ }
+  }
+  return "";
+}
+
+function setKey(key, remember) {
+  for (const kind of ["session", "local"]) { try { storage(kind)?.removeItem(KEY_STORE); } catch (_) { /* ignore */ } }
+  if (!key) return;
+  try { storage(remember ? "local" : "session")?.setItem(KEY_STORE, key); } catch (_) { /* ignore */ }
+  state.memoryKey = key; // still usable this page load even if storage is blocked
+}
+
+function currentKey() { return getKey() || state.memoryKey || ""; }
+
+function keyHeaders() {
+  const k = currentKey();
+  return k ? { "X-Anthropic-Api-Key": k } : {};
+}
+
+function maskKey(k) { return k.length > 14 ? `${k.slice(0, 7)}…${k.slice(-4)}` : "••••"; }
+
+const STATUS = {
+  checking: ["bg-slate-400 animate-pulse", "Checking Claude…"],
+  ok: ["bg-emerald-500", ""],
+  bad: ["bg-rose-500", ""],
+  none: ["bg-amber-500", "No API key yet"],
+  offline: ["bg-rose-500", "Server unreachable"],
+};
+
+function renderKeyStatus(kind, text) {
+  const [dot, fallback] = STATUS[kind];
+  els.keyStatus.innerHTML = `<span class="h-2 w-2 shrink-0 rounded-full ${dot}"></span><span class="truncate">${escapeHtml(text || fallback)}</span>`;
+  els.keyStatus.title = text || fallback;
+  const showBanner = kind === "none" || kind === "bad";
+  els.keyBanner.classList.toggle("hidden", !showBanner);
+  els.keyBanner.classList.toggle("flex", showBanner);
+  els.keyBannerText.textContent = kind === "bad"
+    ? "Your API key isn't working. Open the key screen to fix it."
+    : "Add your Anthropic API key to get answers. Search works without it.";
+  els.keyBannerBtn.textContent = kind === "bad" ? "Fix API key" : "Add API key";
+}
+
+function showKeyResult(kind, html) {
+  const styles = {
+    pending: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    ok: "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200",
+    bad: "bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200",
+  };
+  els.keyResult.className = `mt-4 rounded-xl px-3 py-2.5 text-sm ${styles[kind]}`;
+  els.keyResult.innerHTML = html;
+}
+
+/** Ask the server whether the key works. `key` overrides the stored key (used before saving). */
+async function checkKey(key = currentKey()) {
+  renderKeyStatus("checking");
   try {
-    const res = await fetch("/health");
-    const h = await res.json();
-    const dot = h.llm_configured ? "bg-emerald-500" : "bg-amber-500";
-    const text = h.llm_configured ? "Ready" : "Ready · no LLM key (retrieval only)";
-    els.health.innerHTML = `<span class="h-2 w-2 rounded-full ${dot}"></span>${text}`;
-  } catch (_) {
-    els.health.innerHTML = `<span class="h-2 w-2 rounded-full bg-rose-500"></span>Server unreachable`;
+    const res = await fetch("/llm/check", { method: "POST", headers: key ? { "X-Anthropic-Api-Key": key } : {} });
+    if (!res.ok) throw new Error(await apiError(res));
+    const r = await res.json();
+    state.llm = r;
+    if (r.ok) renderKeyStatus("ok", r.source === "browser" ? `Claude connected · your key` : `Claude connected · server key`);
+    else renderKeyStatus(r.source === "none" ? "none" : "bad", r.source === "none" ? "" : "API key not working");
+    return r;
+  } catch (e) {
+    renderKeyStatus("offline");
+    return { ok: false, message: e.message || "Server unreachable." };
   }
 }
+
+function openKeyModal() {
+  const k = currentKey();
+  els.keyInput.value = "";
+  els.keyInput.placeholder = k ? `Saved: ${maskKey(k)} (paste a new key to replace it)` : "sk-ant-…";
+  els.keyRemember.checked = (() => { try { return !!storage("local")?.getItem(KEY_STORE); } catch (_) { return false; } })();
+  els.keyRemove.disabled = !k;
+  els.keyResult.classList.add("hidden");
+  if (state.llm && state.llm.source !== "none") {
+    showKeyResult(state.llm.ok ? "ok" : "bad",
+      state.llm.ok ? `✅ ${escapeHtml(state.llm.message)} <span class="opacity-70">(${state.llm.source === "browser" ? "your key" : "server key"})</span>`
+                   : `❌ ${escapeHtml(state.llm.message)}`);
+  }
+  els.keyModal.classList.remove("hidden");
+  els.keyModal.classList.add("flex");
+  setTimeout(() => els.keyInput.focus(), 30);
+}
+
+function closeKeyModal() {
+  els.keyModal.classList.add("hidden");
+  els.keyModal.classList.remove("flex");
+  els.keyInput.value = "";
+  els.keyInput.type = "password";
+  els.keyReveal.textContent = "Show";
+}
+
+async function runKeyTest(save) {
+  const typed = els.keyInput.value.trim();
+  const key = typed || currentKey();
+  if (!key) { showKeyResult("bad", "Paste your API key first."); return; }
+  if (typed && !typed.startsWith("sk-")) { showKeyResult("bad", "That doesn't look like an Anthropic API key (they start with <code>sk-ant-</code>)."); return; }
+  els.keySave.disabled = true; els.keyTest.disabled = true;
+  showKeyResult("pending", `<span class="inline-flex items-center gap-2"><span class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>Contacting Anthropic…</span>`);
+  const r = await checkKey(key);
+  els.keySave.disabled = false; els.keyTest.disabled = false;
+  if (r.ok) {
+    if (save && typed) { setKey(typed, els.keyRemember.checked); els.keyRemove.disabled = false; }
+    else if (save && !typed) { setKey(key, els.keyRemember.checked); }
+    showKeyResult("ok", `✅ It works! ${escapeHtml(r.message)}${save ? " Key saved, so you can start asking questions." : ""}`);
+    if (save) { toast("Claude is connected.", "ok"); setTimeout(closeKeyModal, 1200); }
+  } else {
+    showKeyResult("bad", `❌ ${escapeHtml(r.message)}${save ? " The key was not saved." : ""}`);
+    if (typed) await checkKey(); // restore the sidebar status for the previously saved key
+  }
+}
+
+els.openKey.addEventListener("click", openKeyModal);
+els.keyBannerBtn.addEventListener("click", openKeyModal);
+els.keyClose.addEventListener("click", closeKeyModal);
+els.keyModal.addEventListener("click", (e) => { if (e.target === els.keyModal) closeKeyModal(); });
+els.keyForm.addEventListener("submit", (e) => { e.preventDefault(); runKeyTest(true); });
+els.keyTest.addEventListener("click", () => runKeyTest(false));
+els.keyReveal.addEventListener("click", () => {
+  const hidden = els.keyInput.type === "password";
+  els.keyInput.type = hidden ? "text" : "password";
+  els.keyReveal.textContent = hidden ? "Hide" : "Show";
+});
+els.keyRemove.addEventListener("click", async () => {
+  setKey("", false);
+  state.memoryKey = "";
+  els.keyRemove.disabled = true;
+  els.keyInput.placeholder = "sk-ant-…";
+  const r = await checkKey();
+  showKeyResult(r.ok ? "ok" : "pending", r.ok ? "Your key was removed. The server's own key is still active." : "Your key was removed from this browser.");
+});
 
 /* ===================== documents ===================== */
 async function loadDocs() {
@@ -206,7 +342,6 @@ function uploadFile(file) {
 async function handleFiles(files) {
   for (const f of files) await uploadFile(f); // sequential keeps indexing load predictable
   await loadDocs();
-  refreshHealth();
 }
 
 els.fileInput.addEventListener("change", (e) => { handleFiles([...e.target.files]); e.target.value = ""; });
@@ -418,7 +553,7 @@ els.thread.addEventListener("click", (e) => {
 });
 els.drawerClose.addEventListener("click", closeDrawer);
 els.drawerBackdrop.addEventListener("click", closeDrawer);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); closeKeyModal(); } });
 
 /* ===================== asking (SSE over fetch) ===================== */
 function setBusy(busy) {
@@ -439,7 +574,7 @@ async function ask(question) {
   try {
     const res = await fetch("/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...keyHeaders() },
       body: JSON.stringify({ question, doc_ids: state.selected.size ? [...state.selected] : null }),
       signal: state.controller.signal,
     });
@@ -524,7 +659,7 @@ els.toggleSidebar.addEventListener("click", () => {
 /* ===================== boot ===================== */
 try { state.debug = localStorage.getItem("rag-debug") === "1"; } catch (_) { /* ignore */ }
 els.debugToggle.checked = state.debug;
-refreshHealth();
+checkKey();
 loadDocs().then(() => {
   if (!state.docs.length && window.innerWidth < 768) {
     els.sidebarBody.classList.remove("hidden");

@@ -88,4 +88,14 @@ class HealthResponse(BaseModel):
 
     status: str
     documents: int
-    llm_configured: bool
+    llm_configured: bool  # True only when the server has its own key in .env
+    llm_model: str
+
+
+class LLMCheckResponse(BaseModel):
+    """Result of `POST /llm/check`."""
+
+    ok: bool
+    source: str  # "browser" (key pasted in the UI), "server" (.env) or "none"
+    model: str
+    message: str

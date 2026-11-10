@@ -22,16 +22,38 @@ def sample_pdf(tmp_path_factory) -> Path:
     return build(tmp_path_factory.mktemp("pdf") / "halcyon.pdf")
 
 
-@pytest.fixture
-def client(tmp_path):
+GOOD_TEST_KEY = "sk-ant-test-good"
+
+
+def _make_client(tmp_path, server_llm):
     settings = Settings(data_dir=tmp_path, min_rerank_score=0.0, anthropic_api_key="")
     embedder, reranker = FakeEmbedder(), FakeReranker()
     vectors, bm25 = VectorStore(settings.chroma_dir), BM25Store(settings.bm25_path)
     index = DocumentIndex(DocumentDB(settings.sqlite_path), vectors, bm25, embedder, settings.uploads_dir)
-    llm = FakeLLM("The battery stores 11.2 kWh [1].")
-    services = Services(settings, index, HybridRetriever(embedder, vectors, bm25, reranker), llm)
-    with TestClient(create_app(services)) as c:
-        c.llm = llm
+    made: list[FakeLLM] = []
+
+    def factory(key: str) -> FakeLLM:
+        llm = FakeLLM("Answer written with the browser key [1].", valid=key == GOOD_TEST_KEY)
+        made.append(llm)
+        return llm
+
+    services = Services(settings, index, HybridRetriever(embedder, vectors, bm25, reranker), server_llm, factory)
+    client = TestClient(create_app(services))
+    client.llm, client.made = server_llm, made
+    return client
+
+
+@pytest.fixture
+def client(tmp_path):
+    """Server that has its own key configured."""
+    with _make_client(tmp_path, FakeLLM("The battery stores 11.2 kWh [1].")) as c:
+        yield c
+
+
+@pytest.fixture
+def keyless_client(tmp_path):
+    """Server with no key in .env: users must supply their own."""
+    with _make_client(tmp_path, None) as c:
         yield c
 
 
@@ -49,7 +71,9 @@ def _upload(client, path: Path, name: str | None = None):
 
 
 def test_health_and_index_page(client):
-    assert client.get("/health").json() == {"status": "ok", "documents": 0, "llm_configured": True}
+    assert client.get("/health").json() == {
+        "status": "ok", "documents": 0, "llm_configured": True, "llm_model": "claude-sonnet-5-5",
+    }
     assert "rag-chat" in client.get("/").text
 
 
@@ -98,6 +122,35 @@ def test_ask_unrelated_question_falls_back(client, sample_pdf):
     name, done = _sse(r.text)[-1]
     assert name == "done" and done["answerable"] is False
     assert client.llm.calls == []
+
+
+def test_llm_check_reports_missing_good_and_bad_keys(keyless_client):
+    r = keyless_client.post("/llm/check").json()
+    assert r["ok"] is False and r["source"] == "none"
+    good = keyless_client.post("/llm/check", headers={"X-Anthropic-Api-Key": GOOD_TEST_KEY}).json()
+    assert good["ok"] is True and good["source"] == "browser"
+    bad = keyless_client.post("/llm/check", headers={"X-Anthropic-Api-Key": "sk-ant-wrong"}).json()
+    assert bad["ok"] is False and "rejected" in bad["message"]
+
+
+def test_llm_check_uses_server_key_when_browser_sends_none(client):
+    r = client.post("/llm/check").json()
+    assert r["ok"] is True and r["source"] == "server"
+
+
+def test_ask_uses_browser_key_over_server_key(client, sample_pdf):
+    _upload(client, sample_pdf)
+    q = {"question": "How much usable energy capacity does the battery have?"}
+    name, done = _sse(client.post("/ask", json=q, headers={"X-Anthropic-Api-Key": GOOD_TEST_KEY}).text)[-1]
+    assert name == "done" and done["answer"].startswith("Answer written with the browser key")
+    assert client.llm.calls == [] and len(client.made[-1].calls) == 1
+
+
+def test_ask_without_any_key_asks_user_for_one(keyless_client, sample_pdf):
+    _upload(keyless_client, sample_pdf)
+    q = {"question": "How much usable energy capacity does the battery have?"}
+    name, data = _sse(keyless_client.post("/ask", json=q).text)[-1]
+    assert name == "error" and "API key" in data["message"]
 
 
 def test_ask_with_no_documents_returns_error(client):

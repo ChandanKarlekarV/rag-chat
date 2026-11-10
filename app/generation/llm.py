@@ -13,8 +13,14 @@ class LLMError(RuntimeError):
 class LLM(Protocol):
     """Anything that can stream a completion for a system prompt + user prompt."""
 
+    model: str
+
     def stream(self, system: str, prompt: str) -> Iterator[str]:
         """Yield text deltas as they are generated."""
+        ...
+
+    def check(self) -> None:
+        """Raise LLMError if the credentials or model are unusable."""
         ...
 
 
@@ -58,3 +64,20 @@ class AnthropicLLM:
             raise LLMError(f"The language model returned an error ({exc.status_code}).") from exc
         if final.stop_reason == "refusal":
             raise LLMError("The language model declined to answer this question.")
+
+    def check(self) -> None:
+        """Validate the key and model with the free Models API (no tokens are spent)."""
+        try:
+            self._client.models.retrieve(self.model)
+        except anthropic.AuthenticationError as exc:
+            raise LLMError("This API key was rejected by Anthropic. Check that you copied it completely.") from exc
+        except anthropic.PermissionDeniedError as exc:
+            raise LLMError("This API key does not have access to the configured model.") from exc
+        except anthropic.NotFoundError as exc:
+            raise LLMError(f"Model '{self.model}' was not found. Check LLM_MODEL.") from exc
+        except anthropic.RateLimitError as exc:
+            raise LLMError("Anthropic is rate-limiting this key right now. Try again shortly.") from exc
+        except anthropic.APIConnectionError as exc:
+            raise LLMError("Could not reach the Anthropic API from the server.") from exc
+        except anthropic.APIStatusError as exc:
+            raise LLMError(f"Anthropic returned an error ({exc.status_code}).") from exc

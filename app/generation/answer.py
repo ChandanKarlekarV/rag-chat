@@ -83,7 +83,10 @@ def answer_stream(
         yield done(FALLBACK_MESSAGE, [], False)
         return
     if llm is None:
-        yield _event("error", {"message": "No LLM is configured. Set ANTHROPIC_API_KEY in .env."})
+        yield _event(
+            "error",
+            {"message": "No API key yet. Click “API key” in the sidebar and paste your Anthropic key."},
+        )
         return
 
     full = ""

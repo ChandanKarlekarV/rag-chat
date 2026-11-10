@@ -6,8 +6,7 @@
 > 📽️ *Demo GIF goes here (`docs/demo.gif`).*
 
 ```bash
-cp .env.example .env        # add your ANTHROPIC_API_KEY
-docker compose up --build   # → http://localhost:8000
+docker compose up --build   # → http://localhost:8000, then click "API key" and paste your Anthropic key
 ```
 
 ---
@@ -23,6 +22,7 @@ docker compose up --build   # → http://localhost:8000
 - **Clickable citations**: `[n]` markers become chips that open a drawer with the file name, page range and the passage, with query terms highlighted.
 - **Debug mode**: shows vector, BM25, RRF and rerank scores for every retrieved source, so you can see *why* an answer was (or wasn't) given.
 - **Document scoping**: tick documents in the sidebar to restrict a question to them.
+- **Bring your own API key**: no key ships with the app. Each user pastes their Anthropic key into the **API key** screen, which tests it right away (via the free Models API) and shows a live status (connected / not working / no key). The key stays in the browser and is never stored or logged by the server.
 - **Measured, not claimed**: `scripts/evaluate.py` compares vector-only, hybrid and hybrid + rerank on a labelled question set.
 - **One command to run**: Docker image with both models baked in, persistent `./data` volume and a healthcheck.
 
@@ -134,7 +134,8 @@ Measured results (28 chunks, CPU, `MIN_RERANK_SCORE=-5.0`):
 - **Citation formats:** `[1]`, `[1][2]` and `[1, 2]` are all parsed; numbers outside the source list are ignored.
 - **Uploads** keep the original PDF under `data/uploads/<doc_id>.pdf` so a future PDF viewer can open it. Duplicate uploads (same SHA-256) return the existing document with `duplicate: true`.
 - **The Docker container runs as root**, so the `./data` bind mount is writable on Linux hosts, where Docker creates the directory root-owned.
-- **No API key:** the app still starts and serves retrieval and the gate. Questions that pass the gate return a clear "No LLM is configured" error. The `FakeLLM` in `tests/fakes.py` is used **only in tests**.
+- **API keys are per user:** `ANTHROPIC_API_KEY` is blank by default. The UI sends the user's key in an `X-Anthropic-Api-Key` header with each request, and the server builds a client for that request only. A key in `.env` is optional and is used only when the browser sends none. Without any key, search and the gate still work; questions that pass the gate return "No API key yet". The `FakeLLM` in `tests/fakes.py` is used **only in tests**.
+- **No CORS**: the UI is same-origin, so cross-origin calls are not allowed. Other websites can't spend a server key or relay a user's key through this API. When deploying publicly, serve it over HTTPS so keys are encrypted in transit.
 - **Location:** the project lives in the repository root rather than a nested `rag-chat/` folder.
 
 ## Running it
@@ -142,11 +143,10 @@ Measured results (28 chunks, CPU, `MIN_RERANK_SCORE=-5.0`):
 ### Docker (recommended)
 
 ```bash
-cp .env.example .env               # set ANTHROPIC_API_KEY
 docker compose up --build
 ```
 
-Open http://localhost:8000. The first build downloads PyTorch (CPU-only wheels) and both models into the image, so later starts are fast and work offline. Indexed data persists in `./data`.
+Open http://localhost:8000, click **API key** in the sidebar, paste your Anthropic key and press **Save & test**. A green "Claude connected" status means it works. (Optional: to give every visitor a shared key instead, `cp .env.example .env` and set `ANTHROPIC_API_KEY` there.) The first build downloads PyTorch (CPU-only wheels) and both models into the image, so later starts are fast and work offline. Indexed data persists in `./data`.
 
 ### Local development
 
@@ -156,17 +156,16 @@ Requires Python 3.11+.
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
-cp .env.example .env                 # set ANTHROPIC_API_KEY
 python scripts/make_sample_pdf.py    # optional: regenerate samples/*.pdf
 uvicorn app.main:app --reload
 ```
 
-Interactive API docs live at http://localhost:8000/docs.
+Then add your key in the UI as above. Interactive API docs live at http://localhost:8000/docs.
 
 ### Tests and evaluation
 
 ```bash
-pytest                               # 29 tests: chunker, RRF, BM25, gate, NO_ANSWER, citations, API end to end
+pytest                               # 33 tests: chunker, RRF, BM25, gate, NO_ANSWER, citations, API keys, API end to end
 python scripts/evaluate.py --sweep
 ```
 
@@ -180,7 +179,10 @@ The API tests use real Chroma, SQLite and BM25 with lightweight fake embedder, r
 | `GET` | `/documents` | list of `DocumentMeta`, newest first |
 | `DELETE` | `/documents/{doc_id}` | removes the document from SQLite, Chroma, BM25 and disk; `404` if unknown |
 | `POST` | `/ask` | `{question, doc_ids?, top_k?}` → `text/event-stream` |
-| `GET` | `/health` | `{status, documents, llm_configured}` |
+| `POST` | `/llm/check` | `{ok, source, model, message}`: does the key work? `source` is `browser`, `server` or `none` |
+| `GET` | `/health` | `{status, documents, llm_configured, llm_model}` (`llm_configured` = the server has its own key) |
+
+`/ask` and `/llm/check` take the user's key in the optional `X-Anthropic-Api-Key` header; without it, the server's `.env` key (if any) is used.
 
 `/ask` emits these events:
 
@@ -201,7 +203,7 @@ All settings live in `.env` (see `.env.example`) and are read by `pydantic-setti
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (empty) | required for generated answers |
+| `ANTHROPIC_API_KEY` | (empty) | optional shared key; leave blank so each user adds their own in the UI |
 | `LLM_MODEL` | `claude-sonnet-5-5` | any Anthropic model id |
 | `LLM_MAX_TOKENS` / `LLM_TIMEOUT_S` | `2048` / `60` | generation limits |
 | `EMBED_MODEL` / `RERANK_MODEL` | bge-small / MiniLM-L-6 | swap models (the Docker image bakes in the defaults) |

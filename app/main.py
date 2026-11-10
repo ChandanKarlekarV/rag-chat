@@ -2,20 +2,19 @@
 
 import json
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.db import DocumentDB
 from app.generation.answer import NO_DOCS_MESSAGE, answer_stream
-from app.generation.llm import LLM, AnthropicLLM
+from app.generation.llm import LLM, AnthropicLLM, LLMError
 from app.index import DocumentIndex
 from app.ingest.loader import IngestError
 from app.retrieval.bm25_store import BM25Store
@@ -23,10 +22,14 @@ from app.retrieval.embedder import get_embedder
 from app.retrieval.hybrid import HybridRetriever
 from app.retrieval.reranker import get_reranker
 from app.retrieval.vector_store import VectorStore
-from app.schemas import AskRequest, DocumentMeta, HealthResponse, UploadResponse
+from app.schemas import AskRequest, DocumentMeta, HealthResponse, LLMCheckResponse, UploadResponse
 
 log = logging.getLogger("rag-chat")
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+API_KEY_HEADER = "X-Anthropic-Api-Key"
+LLMFactory = Callable[[str], LLM]
 
 
 @dataclass
@@ -36,7 +39,19 @@ class Services:
     settings: Settings
     index: DocumentIndex
     retriever: HybridRetriever
-    llm: LLM | None
+    llm: LLM | None  # built from the server's .env key, if any
+    llm_factory: LLMFactory  # builds an LLM from a key the user pasted into the UI
+
+    def resolve_llm(self, user_key: str | None) -> tuple[LLM | None, str]:
+        """Prefer the key sent by the browser; fall back to the server key. Returns (llm, source)."""
+        if user_key and user_key.strip():
+            return self.llm_factory(user_key.strip()), "browser"
+        return self.llm, ("server" if self.llm else "none")
+
+
+def anthropic_factory(settings: Settings) -> LLMFactory:
+    """Factory that creates an Anthropic client for a given key with the configured model."""
+    return lambda key: AnthropicLLM(key, settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s)
 
 
 def build_services(settings: Settings, llm: LLM | None = None) -> Services:
@@ -58,9 +73,10 @@ def build_services(settings: Settings, llm: LLM | None = None) -> Services:
         settings.max_upload_mb,
     )
     retriever = HybridRetriever(embedder, vectors, bm25, reranker, settings.candidates, settings.rrf_k)
+    factory = anthropic_factory(settings)
     if llm is None and settings.anthropic_api_key:
-        llm = AnthropicLLM(settings.anthropic_api_key, settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s)
-    return Services(settings, index, retriever, llm)
+        llm = factory(settings.anthropic_api_key)
+    return Services(settings, index, retriever, llm, factory)
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -72,8 +88,9 @@ def create_app(services: Services | None = None) -> FastAPI:
         log.info("rag-chat ready")
         yield
 
+    # No CORS middleware on purpose: the UI is same-origin, and other sites must not be able to
+    # spend the server's key or relay a user's key through this API.
     app = FastAPI(title="rag-chat", version="1.0.0", description="Chat with your PDFs.", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     def svc(request: Request) -> Services:
         return request.app.state.services
@@ -85,7 +102,24 @@ def create_app(services: Services | None = None) -> FastAPI:
             status="ok",
             documents=s.index.db.count(),
             llm_configured=s.llm is not None,
+            llm_model=s.settings.llm_model,
         )
+
+    @app.post("/llm/check", response_model=LLMCheckResponse)
+    def llm_check(
+        request: Request, user_key: str | None = Header(default=None, alias=API_KEY_HEADER)
+    ) -> LLMCheckResponse:
+        """Check whether the browser's key (or else the server's key) can reach the model."""
+        s = svc(request)
+        llm, source = s.resolve_llm(user_key)
+        model = s.settings.llm_model
+        if llm is None:
+            return LLMCheckResponse(ok=False, source=source, model=model, message="No API key has been added yet.")
+        try:
+            llm.check()
+        except LLMError as exc:
+            return LLMCheckResponse(ok=False, source=source, model=model, message=str(exc))
+        return LLMCheckResponse(ok=True, source=source, model=model, message=f"Connected to {model}.")
 
     @app.post("/upload", response_model=UploadResponse)
     def upload(request: Request, file: UploadFile = File(...)) -> UploadResponse:
@@ -109,8 +143,11 @@ def create_app(services: Services | None = None) -> FastAPI:
         return {"status": "deleted", "doc_id": doc_id}
 
     @app.post("/ask")
-    def ask(request: Request, body: AskRequest) -> StreamingResponse:
+    def ask(
+        request: Request, body: AskRequest, user_key: str | None = Header(default=None, alias=API_KEY_HEADER)
+    ) -> StreamingResponse:
         s = svc(request)
+        llm, _ = s.resolve_llm(user_key)
 
         def events() -> Iterator[str]:
             if s.index.db.count() == 0:
@@ -123,7 +160,7 @@ def create_app(services: Services | None = None) -> FastAPI:
                 log.exception("retrieval failed")
                 yield _sse("error", {"message": "Search failed unexpectedly. Please try again."})
                 return
-            for ev in answer_stream(body.question, sources, s.llm, s.settings.min_rerank_score):
+            for ev in answer_stream(body.question, sources, llm, s.settings.min_rerank_score):
                 yield _sse(ev["event"], ev["data"])
 
         headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}

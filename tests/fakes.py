@@ -4,6 +4,7 @@ import hashlib
 import math
 from collections.abc import Iterator
 
+from app.generation.llm import LLMError
 from app.retrieval.bm25_store import tokenize
 from app.schemas import RetrievedChunk
 
@@ -43,10 +44,17 @@ class FakeReranker:
 class FakeLLM:
     """Replays a scripted answer in small deltas and records the prompts it received."""
 
-    def __init__(self, answer: str, chunk_size: int = 3) -> None:
+    model = "fake-model"
+
+    def __init__(self, answer: str, chunk_size: int = 3, valid: bool = True) -> None:
         self.answer = answer
         self.chunk_size = chunk_size
+        self.valid = valid
         self.calls: list[tuple[str, str]] = []
+
+    def check(self) -> None:
+        if not self.valid:
+            raise LLMError("This API key was rejected by Anthropic.")
 
     def stream(self, system: str, prompt: str) -> Iterator[str]:
         self.calls.append((system, prompt))
