@@ -182,9 +182,7 @@ def main() -> None:
 
         # ---------- 1. retrieval ----------
         print(f"### Retrieval (MIN_RERANK_SCORE={gate})\n")
-        print(
-            "| Config | Hit@1 | Hit@5 | MRR | Gate fallback acc. | Latency / query (CPU) |\n|---|---|---|---|---|---|"
-        )
+        print("| Config | Hit@1 | Hit@5 | MRR | Gate fallback acc. | Latency / query |\n|---|---|---|---|---|---|")
         for label, mode in CONFIGS:
             hits = hits1 = 0
             rr = 0.0

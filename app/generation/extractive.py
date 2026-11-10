@@ -21,6 +21,7 @@ import math
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Protocol
 
 from app.generation.base import EXTRACTIVE_LABEL, AnswerEvent, AnswerMode, QuestionType
@@ -28,7 +29,7 @@ from app.generation.prompt import NO_ANSWER_TOKEN
 from app.generation.reader import Span
 from app.schemas import RetrievedChunk
 
-_SENTENCE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"')\]]?\s+(?=[\"'(\[]?[A-Z0-9])")
 _ASKS_PRICE = re.compile(r"\b(cost|costs|price|priced|pricing)\b", re.I)
 _MONEY = re.compile(
     r"[$€£¥₹]|\b(usd|eur|gbp|inr|dollars?|euros?|pounds?|rupees?|cents?|free of charge|no cost)\b", re.I
@@ -73,14 +74,19 @@ def answer_type_ok(question: str, span_text: str) -> bool:
 
 
 def split_sentences(text: str, source: int) -> list[Sentence]:
-    """Sentences of a chunk with character offsets (verbatim, whitespace trimmed)."""
+    """Sentences of a chunk with character offsets (verbatim, whitespace trimmed).
+
+    A sentence ends at . ! or ? followed by whitespace and a capital letter or digit, so decimals
+    ("37.8 MWh"), versions and abbreviations inside a sentence are never cut.
+    """
+    bounds = [0, *(m.end() for m in _SENTENCE_END.finditer(text)), len(text)]
     out = []
-    for m in _SENTENCE.finditer(text):
-        raw = m.group(0)
+    for a, b in pairwise(bounds):
+        raw = text[a:b]
         lead = len(raw) - len(raw.lstrip())
         sentence = raw.strip()
         if len(sentence) > 1:
-            start = m.start() + lead
+            start = a + lead
             out.append(Sentence(source, start, start + len(sentence), sentence))
     return out
 

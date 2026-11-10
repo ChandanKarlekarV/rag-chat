@@ -129,6 +129,8 @@ def test_summary_and_explain_routing_quote_and_hint():
 def test_helpers():
     assert answer_type_ok("How much does it cost?", "$4,990") and not answer_type_ok("What is the price?", "118 kg")
     assert not answer_type_ok("How many units?", "a battery") and answer_type_ok("How many units?", "four")
+    decimal = split_sentences("Delivered energy must not exceed 37.8 MWh. The warranty ends then.", 1)
+    assert [s.text for s in decimal] == ["Delivered energy must not exceed 37.8 MWh.", "The warranty ends then."]
     sents = split_sentences("  A b. C d!  Ef", 3)
     assert [s.text for s in sents] == ["A b.", "C d!", "Ef"] and sents[1].source == 3
     assert "  A b. C d!  Ef"[sents[1].start : sents[1].end] == "C d!"
