@@ -60,6 +60,10 @@
 }
 
 :root {
+  /* brand (logo bubble and its check mark; identical in both themes) */
+  --color-brand-highlight: #F0B35A;
+  --color-brand-ink: #0B1F1C;
+
   /* typography */
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;

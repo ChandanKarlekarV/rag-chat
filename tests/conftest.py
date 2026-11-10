@@ -12,7 +12,7 @@ from app.generation.llm_fake import FakeLLM
 from app.main import create_app
 from app.services.container import build_container
 from scripts.make_sample_pdf import build
-from tests.fakes import FakeEmbedder, FakeReranker
+from tests.fakes import FakeEmbedder, FakeReader, FakeReranker
 
 GOOD_KEY = "sk-ant-test-good"
 CSRF = {"X-Requested-With": "fetch"}
@@ -36,8 +36,15 @@ class Harness:
 
 
 def make_harness(tmp_path: Path, sample_pdf: Path, server_key: str = "", **overrides) -> Iterator[Harness]:
+    overrides.setdefault("llm_provider", "anthropic")
+    overrides.setdefault("reader_min_score", 0.0)
     settings = Settings(
-        data_dir=tmp_path, anthropic_api_key=server_key, min_rerank_score=0.0, llm_provider="anthropic", **overrides
+        data_dir=tmp_path,
+        anthropic_api_key=server_key,
+        min_rerank_score=0.0,
+        database_url="",
+        _env_file=None,
+        **overrides,
     )
     made: list[FakeLLM] = []
 
@@ -47,7 +54,12 @@ def make_harness(tmp_path: Path, sample_pdf: Path, server_key: str = "", **overr
         return llm
 
     container = build_container(
-        settings, embedder=FakeEmbedder(), reranker=FakeReranker(), llm_factory=factory, sample_pdf=sample_pdf
+        settings,
+        embedder=FakeEmbedder(),
+        reranker=FakeReranker(),
+        llm_factory=factory,
+        reader=FakeReader(),
+        sample_pdf=sample_pdf,
     )
     with TestClient(create_app(container)) as client:
         yield Harness(client, made)

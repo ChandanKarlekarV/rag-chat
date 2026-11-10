@@ -55,6 +55,31 @@ class AnthropicLLM:
         if final.stop_reason == "refusal":
             raise LLMError("The language model declined to answer this question.")
 
+    def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+        """Short non-streamed completion. Thinking is turned off where the model allows it.
+
+        unverified: not exercised against the live API here (no key on the build machine); the
+        parameters follow the bundled Claude API reference for claude-sonnet-5-5.
+        """
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max(max_tokens, 1024),
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+            "output_config": {"effort": "low"},
+        }
+        if self.model == "claude-sonnet-5-5":
+            kwargs["thinking"] = {"type": "between_tools"}  # Sonnet 5.5's thinking-off mode
+        if self.model in _FALLBACK_MODELS:
+            kwargs |= {"betas": [_FALLBACK_BETA], "fallbacks": "default"}
+        try:
+            msg = self._client.beta.messages.create(**kwargs)
+        except anthropic.APIError as exc:
+            raise LLMError("The language model could not complete this request.") from exc
+        if msg.stop_reason == "refusal":
+            raise LLMError("The language model declined this request.")
+        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
     def check(self) -> None:
         """Validate the key and model with the free Models API (no tokens are spent)."""
         try:

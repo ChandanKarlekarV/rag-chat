@@ -1,4 +1,4 @@
-"""Builds and holds all long-lived services (models are loaded exactly once)."""
+"""Builds and holds all long-lived services (models are loaded exactly once per process)."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -7,8 +7,10 @@ from typing import Protocol
 
 from app.config import Settings
 from app.db.session import Database
+from app.generation.answerer import Answerer, LLMAnswerer, LocalAnswerer, SpanReader
 from app.generation.factory import make_llm
 from app.generation.llm_base import LLMClient
+from app.generation.rewrite import HeuristicRewriter, LLMRewriter, QueryRewriter
 from app.retrieval.bm25_store import BM25Store
 from app.retrieval.hybrid import ChunkReranker, HybridRetriever, QueryEmbedder
 from app.retrieval.vector_store import VectorStore
@@ -28,6 +30,15 @@ class Embedder(QueryEmbedder, DocEmbedder, Protocol):
     """Structural type: something that embeds both queries and documents."""
 
 
+@dataclass(frozen=True)
+class Engine:
+    """How a request will be answered."""
+
+    answerer: Answerer | None
+    rewriter: QueryRewriter
+    source: str  # "browser" | "server" | "local" | "none"
+
+
 @dataclass
 class Container:
     """Everything the HTTP layer needs."""
@@ -42,13 +53,30 @@ class Container:
     auth_limiter: RateLimiter
     ask_limiter: RateLimiter
     server_llm: LLMClient | None = None
+    local: LocalAnswerer | None = None
     models_loaded: bool = True
 
-    def resolve_llm(self, user_key: str | None) -> tuple[LLMClient | None, str]:
-        """Prefer the key the browser sent, else the server's own LLM. Returns (llm, source)."""
-        if user_key and user_key.strip() and self.settings.llm_provider != "fake":
-            return self.llm_factory(user_key.strip()), "browser"
-        return self.server_llm, ("server" if self.server_llm else "none")
+    def engine(self, user_key: str | None) -> Engine:
+        """Pick the answerer for this request.
+
+        A key sent by the browser always wins (Claude). Otherwise the server's own key, then the
+        local reader, depending on `LLM_PROVIDER`.
+        """
+        provider = self.settings.llm_provider
+        key = (user_key or "").strip()
+        if provider == "local":
+            return self._local()
+        if key and provider in ("auto", "anthropic"):
+            llm = self.llm_factory(key)
+            return Engine(LLMAnswerer(llm), LLMRewriter(llm), "browser")
+        if self.server_llm is not None:
+            return Engine(LLMAnswerer(self.server_llm), LLMRewriter(self.server_llm), "server")
+        if provider == "auto":
+            return self._local()
+        return Engine(None, HeuristicRewriter(), "none")
+
+    def _local(self) -> Engine:
+        return Engine(self.local, HeuristicRewriter(), "local" if self.local else "none")
 
 
 def build_container(
@@ -56,18 +84,23 @@ def build_container(
     embedder: Embedder | None = None,
     reranker: ChunkReranker | None = None,
     llm_factory: LLMFactory | None = None,
+    reader: SpanReader | None = None,
     sample_pdf: Path = SAMPLE_PDF,
 ) -> Container:
-    """Wire the app. Tests pass light fakes for the models and the LLM factory."""
+    """Wire the app. Tests pass light fakes for the models, the reader and the LLM factory."""
     if embedder is None or reranker is None:
         from app.retrieval.embedder import get_embedder  # heavy imports only when real models are used
         from app.retrieval.reranker import get_reranker
 
         embedder = embedder or get_embedder(settings.embed_model)
         reranker = reranker or get_reranker(settings.rerank_model)
+    if reader is None and settings.llm_provider in ("auto", "local"):
+        from app.generation.reader import get_reader
+
+        reader = get_reader(settings.reader_model)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(settings.sqlalchemy_url)
-    db.create_all()
+    db.migrate()
     vectors = VectorStore(settings.chroma_dir)
     bm25 = BM25Store(settings.bm25_dir)
     ingest = IngestService(db, vectors, bm25, embedder, settings)
@@ -77,6 +110,11 @@ def build_container(
     server_llm = None
     if settings.llm_provider == "fake" or settings.anthropic_api_key:
         server_llm = factory(settings.anthropic_api_key)
+    local = (
+        LocalAnswerer(reader, settings.reader_model, settings.reader_min_score, settings.reader_rerank_weight)
+        if reader is not None
+        else None
+    )
     return Container(
         settings=settings,
         db=db,
@@ -88,4 +126,5 @@ def build_container(
         auth_limiter=RateLimiter(settings.auth_rate_per_min),
         ask_limiter=RateLimiter(settings.ask_rate_per_min),
         server_llm=server_llm,
+        local=local,
     )

@@ -20,6 +20,7 @@ from app.services.container import Container, build_container
 
 log = logging.getLogger("rag-chat")
 STATIC_DIR = Path(__file__).parent / "static"
+BRAND_DIR = Path(__file__).resolve().parents[1] / "assets" / "brand"  # logo files with real colors
 
 _HTTP_MESSAGES = {
     404: ("not_found", "We couldn't find that."),
@@ -94,6 +95,10 @@ def create_app(container: Container | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(BRAND_DIR / "favicon.svg", media_type="image/svg+xml")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

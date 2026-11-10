@@ -22,6 +22,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncod
 SentenceTransformer('${EMBED_MODEL}'); CrossEncoder('${RERANK_MODEL}')"
 
 COPY app ./app
+COPY assets ./assets
 COPY scripts ./scripts
 COPY samples ./samples
 

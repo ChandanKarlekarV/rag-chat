@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>rag-chat · Styleguide</title>
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <script>
     (function () {
       var saved = null;
@@ -31,6 +31,7 @@
 </head>
 <body>
   <svg width="0" height="0" class="sr-only" aria-hidden="true">
+    <symbol id="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" style="fill: var(--logo-bg)"/><path d="M18 11h16.5L45 21.5V47a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4V15a4 4 0 0 1 4-4z" style="fill: var(--logo-page)"/><path d="M34.5 11v7.5a3 3 0 0 0 3 3H45z" style="fill: var(--logo-fold)"/><rect x="20" y="27" width="17" height="3" rx="1.5" style="fill: var(--logo-line); fill-opacity: .5"/><rect x="20" y="34" width="13" height="3" rx="1.5" style="fill: var(--logo-line); fill-opacity: .5"/><rect x="20" y="41" width="8" height="3" rx="1.5" style="fill: var(--logo-line); fill-opacity: .5"/><path d="M44 31a12 12 0 1 1-6.9 21.8L31 55l2.1-6A12 12 0 0 1 44 31z" style="fill: var(--logo-bubble); stroke: var(--logo-bg); stroke-width: 3; stroke-linejoin: round"/><path d="M38.6 43.4l3.7 3.7 7.2-7.4" style="fill: none; stroke: var(--logo-check); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z"/></symbol>
@@ -47,7 +48,11 @@
 
   <main class="mx-auto flex flex-col gap-12 px-4 py-10 md:px-6" style="max-width: 960px">
     <header class="flex flex-wrap items-center justify-between gap-4">
-      <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-4">
+        <svg class="c-logo c-logo--lg" role="img" aria-label="rag-chat logo"><use href="#logo"/></svg>
+        <svg class="c-logo" role="img" aria-label="rag-chat logo, small"><use href="#logo"/></svg>
+      </div>
+      <div class="flex flex-1 flex-col gap-1">
         <h1 class="c-title">rag-chat styleguide</h1>
         <p class="c-text u-muted">Every component from DESIGN_SYSTEM.md, built only from tokens. Flat color only.</p>
       </div>

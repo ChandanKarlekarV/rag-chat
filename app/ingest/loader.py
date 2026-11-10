@@ -38,4 +38,6 @@ def load_pdf(data: bytes, filename: str) -> list[PageText]:
     with doc:
         if doc.needs_pass:
             raise IngestError(f"'{filename}' is password-protected.")
+        # Plain text order (not layout blocks): a heading then runs into its first sentence, which
+        # measured better on the eval set (the heading gives the chunk topic context). See README.
         return [PageText(page=i + 1, text=page.get_text("text")) for i, page in enumerate(doc)]

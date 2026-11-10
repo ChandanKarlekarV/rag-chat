@@ -9,13 +9,17 @@ class LLMError(RuntimeError):
 
 
 class LLMClient(Protocol):
-    """Anything that can stream a grounded answer."""
+    """Anything that can stream a grounded answer and make short completions."""
 
     provider: str
     model: str
 
     def stream(self, system: str, user: str) -> Iterator[str]:
         """Yield text deltas as they are generated."""
+        ...
+
+    def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+        """Return a short, non-streamed completion (used for query rewriting and judging)."""
         ...
 
     def check(self) -> None:

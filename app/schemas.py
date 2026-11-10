@@ -154,7 +154,7 @@ class LLMCheckResponse(BaseModel):
     """Result of `POST /llm/check`."""
 
     ok: bool
-    source: Literal["browser", "server", "none"]
+    source: Literal["browser", "server", "local", "none"]
     provider: str
     model: str
     message: str

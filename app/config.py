@@ -19,7 +19,14 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
 
     anthropic_api_key: str = ""  # optional shared key; users can bring their own in the UI
-    llm_provider: str = "anthropic"  # "anthropic" | "fake" (offline demo, extractive answers)
+    # "auto": Claude when a key is available (user's or server's), else the local reader.
+    # "anthropic": Claude only. "local": local reader only. "fake": deterministic test double.
+    llm_provider: str = "auto"
+    # Most accurate on our eval (see README). Faster, lighter option: deepset/deberta-v3-base-squad2.
+    reader_model: str = "deepset/deberta-v3-large-squad2"
+    # Reader confidence (span score - no-answer score + rerank weighting); tuned by scripts/evaluate.py.
+    reader_min_score: float = -3.0
+    reader_rerank_weight: float = 1.0
     llm_model: str = "claude-sonnet-5-5"  # verified on platform.claude.com models overview
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0

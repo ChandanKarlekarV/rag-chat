@@ -298,7 +298,12 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); background: var
 .c-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .c-topbar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-6); border-bottom: var(--border-width) solid var(--color-border); background: var(--color-surface); }
 .c-brand { display: flex; align-items: center; gap: var(--space-3); }
-.c-brand__mark { display: grid; place-items: center; width: var(--size-control-sm); height: var(--size-control-sm); border-radius: var(--radius-md); background: var(--color-primary); color: var(--color-text-inverse); }
+.c-logo {
+  width: var(--size-control-md); height: var(--size-control-md); flex-shrink: 0; display: block;
+  --logo-bg: var(--color-primary); --logo-page: var(--color-text-inverse); --logo-fold: var(--color-primary-subtle);
+  --logo-line: var(--color-primary); --logo-bubble: var(--color-brand-highlight); --logo-check: var(--color-brand-ink);
+}
+.c-logo--lg { width: var(--space-12); height: var(--space-12); }
 .c-composer-bar { padding: var(--space-4) var(--space-6); border-top: var(--border-width) solid var(--color-border); background: var(--color-bg); }
 .c-auth { min-height: 100%; display: grid; place-items: center; padding: var(--space-6) var(--space-4); }
 .c-auth__card { width: min(var(--size-auth), 100%); display: flex; flex-direction: column; gap: var(--space-6); }

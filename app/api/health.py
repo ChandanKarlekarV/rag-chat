@@ -24,7 +24,7 @@ def health(c: Container = Depends(get_container)) -> HealthResponse:
         status="ok" if ok else "degraded",
         database=db_ok,
         models_loaded=c.models_loaded,
-        llm_configured=c.server_llm is not None,
+        llm_configured=c.server_llm is not None or c.local is not None,
         llm_provider=c.settings.llm_provider,
         llm_model=c.settings.llm_model,
     )

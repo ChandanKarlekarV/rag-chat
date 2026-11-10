@@ -31,8 +31,10 @@ def ask(
 ) -> StreamingResponse:
     """Stream an answer as SSE events: `token`*, `citations`, `done` (or `error`)."""
     c.ask_limiter.hit(f"ask:{user.id}", "You're asking very quickly. Please wait a moment and try again.")
-    llm, _ = c.resolve_llm(user_key)
-    events = c.chat.ask(user, body.question, llm, body.conversation_id, body.doc_ids)  # validates eagerly
+    engine = c.engine(user_key)
+    events = c.chat.ask(  # validates eagerly, streams lazily
+        user, body.question, engine.answerer, body.conversation_id, body.doc_ids, engine.rewriter
+    )
 
     def stream() -> Iterator[str]:
         try:
@@ -85,18 +87,26 @@ def llm_check(
     c: Container = Depends(get_container),
     user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
 ) -> LLMCheckResponse:
-    """Does the browser's key (or else the server's) work? Uses the free Models API."""
-    llm, source = c.resolve_llm(user_key)
-    provider, model = c.settings.llm_provider, c.settings.llm_model
-    if llm is None:
-        return LLMCheckResponse(
-            ok=False, source="none", provider=provider, model=model, message="No API key added yet."
-        )
+    """Which engine will answer, and does it work? Keys are checked with the free Models API."""
+    engine = c.engine(user_key)
+    if engine.answerer is None:
+        return LLMCheckResponse(ok=False, source="none", provider="none", model="", message="No API key added yet.")
     try:
-        llm.check()
+        engine.answerer.check()
     except LLMError as exc:
-        return LLMCheckResponse(ok=False, source=source, provider=provider, model=model, message=str(exc))  # type: ignore[arg-type]
-    label = "offline demo model" if llm.provider == "fake" else model
+        return LLMCheckResponse(
+            ok=False,
+            source=engine.source,
+            provider=engine.answerer.provider,  # type: ignore[arg-type]
+            model=engine.answerer.model,
+            message=str(exc),
+        )
+    labels = {"local": "the built-in local model (no key needed)", "fake": "the offline demo model"}
+    label = labels.get(engine.answerer.provider, engine.answerer.model)
     return LLMCheckResponse(
-        ok=True, source=source, provider=provider, model=llm.model, message=f"Connected to {label}."
-    )  # type: ignore[arg-type]
+        ok=True,
+        source=engine.source,
+        provider=engine.answerer.provider,  # type: ignore[arg-type]
+        model=engine.answerer.model,
+        message=f"Answering with {label}.",
+    )

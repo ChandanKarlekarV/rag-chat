@@ -1,27 +1,46 @@
-"""Engine and session factory."""
+"""Engine, session factory and schema migrations (Alembic)."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import Base
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class Database:
-    """Owns the engine and hands out short-lived sessions."""
+    """Owns the engine and hands out short-lived sessions. Works with SQLite and Postgres."""
 
     def __init__(self, url: str) -> None:
-        is_sqlite = url.startswith("sqlite")
-        self.engine: Engine = create_engine(url, connect_args={"check_same_thread": False} if is_sqlite else {})
-        if is_sqlite:
+        self.url = url
+        self.is_sqlite = url.startswith("sqlite")
+        self.engine: Engine = create_engine(
+            url,
+            connect_args={"check_same_thread": False} if self.is_sqlite else {},
+            pool_pre_ping=not self.is_sqlite,
+        )
+        if self.is_sqlite:
             event.listen(self.engine, "connect", _sqlite_pragmas)
         self._factory = sessionmaker(self.engine, expire_on_commit=False)
 
-    def create_all(self) -> None:
-        """Create tables if missing (Alembic migrations are future work)."""
-        Base.metadata.create_all(self.engine)
+    def migrate(self) -> None:
+        """Bring the schema to the latest Alembic revision.
+
+        Databases created by earlier versions with `create_all` (tables but no `alembic_version`)
+        are stamped at the initial revision first, then upgraded.
+        """
+        cfg = Config(str(ROOT / "alembic.ini"))
+        cfg.set_main_option("script_location", str(ROOT / "migrations"))
+        with self.engine.begin() as conn:
+            cfg.attributes["connection"] = conn
+            tables = set(inspect(conn).get_table_names())
+            if "users" in tables and "alembic_version" not in tables:
+                command.stamp(cfg, "0001")
+            command.upgrade(cfg, "head")
 
     @contextmanager
     def session(self) -> Iterator[Session]:

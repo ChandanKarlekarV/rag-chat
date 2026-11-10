@@ -60,8 +60,11 @@ class FakeLLM:
     provider = "fake"
     model = "extractive-fake"
 
-    def __init__(self, answer: str | None = None, chunk_size: int = 4, valid: bool = True) -> None:
+    def __init__(
+        self, answer: str | None = None, chunk_size: int = 4, valid: bool = True, completion: str | None = None
+    ) -> None:
         self.answer = answer
+        self.completion = completion
         self.chunk_size = chunk_size
         self.valid = valid
         self.calls: list[tuple[str, str]] = []
@@ -83,6 +86,14 @@ class FakeLLM:
         text = self.answer if self.answer is not None else self._extractive(user)
         for i in range(0, len(text), self.chunk_size):
             yield text[i : i + self.chunk_size]
+
+    def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+        """Return the scripted completion, or echo the latest question for rewrites."""
+        self.calls.append((system, user))
+        if self.completion is not None:
+            return self.completion
+        match = re.search(r"Latest question: (.+)$", user, re.S)
+        return match.group(1).strip() if match else ""
 
     def check(self) -> None:
         """Succeeds unless constructed with `valid=False`."""

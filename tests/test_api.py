@@ -266,6 +266,43 @@ def test_server_key_used_when_browser_sends_none(tmp_path, sample_pdf):
         assert r["ok"] is True and r["source"] == "server"
 
 
+def test_auto_mode_answers_locally_without_any_key(tmp_path, sample_pdf):
+    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
+        c = harness.client
+        register(c)
+        upload(c, sample_pdf)
+        check = c.post("/llm/check", headers=CSRF).json()
+        assert check["ok"] is True and check["source"] == "local" and "no key needed" in check["message"]
+        events = ask(c, QUESTION, key=None)
+        done = events[-1][1]
+        assert done["answerable"] is True and "**" in done["answer"] and done["answer"].endswith("]")
+        cited = events[-2][1]["citations"]
+        assert cited and cited[0]["text"].replace(" ", "").find(done["answer"].split("**")[1].replace(" ", "")) >= 0
+        assert harness.made == []  # Claude was never called
+
+
+def test_auto_mode_uses_claude_when_the_user_adds_a_key(tmp_path, sample_pdf):
+    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
+        c = harness.client
+        register(c)
+        upload(c, sample_pdf)
+        assert c.post("/llm/check", headers=CSRF | {"X-Anthropic-Api-Key": GOOD_KEY}).json()["source"] == "browser"
+        done = ask(c, QUESTION, key=GOOD_KEY)[-1][1]
+        assert done["answer"].startswith("The battery stores 11.2 kWh") and len(harness.made) == 2
+
+
+def test_follow_up_question_is_rewritten_for_search(tmp_path, sample_pdf):
+    for harness in make_harness(tmp_path, sample_pdf, llm_provider="auto"):
+        c = harness.client
+        register(c)
+        upload(c, sample_pdf)
+        first = ask(c, QUESTION, key=None)[-1][1]
+        events = ask(c, "And how heavy is it?", key=None, conversation_id=first["conversation_id"])
+        rewrites = [d for e, d in events if e == "rewrite"]
+        assert rewrites and "usable" in rewrites[0]["search_query"]
+        assert rewrites[0]["question"] == "And how heavy is it?"
+
+
 def test_health_and_index(h):
     body = h.client.get("/health").json()
     assert body["status"] == "ok" and body["database"] is True and body["models_loaded"] is True

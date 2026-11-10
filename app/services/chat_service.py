@@ -10,14 +10,10 @@ from app.db.models import Conversation, Message, User
 from app.db.repositories import ConversationRepo, DocumentRepo
 from app.db.session import Database
 from app.errors import AppError, NotFound
-from app.generation.llm_base import LLMClient, LLMError
-from app.generation.prompt import (
-    SYSTEM_PROMPT,
-    build_user_prompt,
-    cited_numbers,
-    could_become_no_answer,
-    is_no_answer,
-)
+from app.generation.answerer import Answerer
+from app.generation.llm_base import LLMError
+from app.generation.prompt import cited_numbers, could_become_no_answer, is_no_answer
+from app.generation.rewrite import HeuristicRewriter, QueryRewriter, Turn
 from app.schemas import Citation, ConversationDetail, ConversationOut, MessageOut, RetrievedChunk
 from app.services.retrieval_service import RetrievalService, passes_gate
 
@@ -61,12 +57,15 @@ def _event(name: str, data: dict[str, Any]) -> Event:
 
 
 class ChatService:
-    """Runs questions through retrieval → gate → LLM and stores the conversation."""
+    """Runs questions through rewrite → retrieval → gate → answerer and stores the conversation."""
 
-    def __init__(self, db: Database, retrieval: RetrievalService, min_rerank_score: float) -> None:
+    def __init__(
+        self, db: Database, retrieval: RetrievalService, min_rerank_score: float, history_turns: int = 3
+    ) -> None:
         self.db = db
         self.retrieval = retrieval
         self.min_rerank_score = min_rerank_score
+        self.history_turns = history_turns
 
     # ---- ask ----
 
@@ -74,9 +73,10 @@ class ChatService:
         self,
         user: User,
         question: str,
-        llm: LLMClient | None,
+        answerer: Answerer | None,
         conversation_id: str | None = None,
         doc_ids: list[str] | None = None,
+        rewriter: QueryRewriter | None = None,
     ) -> Iterator[Event]:
         """Validate the request up front (raising AppError), then return the SSE event stream."""
         question = question.strip()
@@ -93,26 +93,49 @@ class ChatService:
             scope = [d for d in doc_ids if d in ready]
             if not scope:
                 raise AppError("no_documents", "The selected documents aren't ready yet. Pick a ready document.")
-        return self._stream(user, question, llm, conversation_id, scope)
+        history = self._history(user.id, conversation_id) if conversation_id else []
+        return self._stream(user, question, answerer, conversation_id, scope, history, rewriter or HeuristicRewriter())
+
+    def _history(self, user_id: str, conversation_id: str) -> list[Turn]:
+        """The last few (question, answer) pairs of a conversation, oldest first."""
+        with self.db.session() as s:
+            conv = ConversationRepo(s).get(user_id, conversation_id)
+            msgs = list(conv.messages) if conv else []
+        turns = [
+            Turn(q.content, a.content)
+            for q, a in zip(msgs[::2], msgs[1::2], strict=False)
+            if q.role == "user" and a.role == "assistant"
+        ]
+        return turns[-self.history_turns :]
 
     def _stream(
-        self, user: User, question: str, llm: LLMClient | None, conversation_id: str | None, scope: list[str] | None
+        self,
+        user: User,
+        question: str,
+        answerer: Answerer | None,
+        conversation_id: str | None,
+        scope: list[str] | None,
+        history: list[Turn],
+        rewriter: QueryRewriter,
     ) -> Iterator[Event]:
-        result = self.retrieval.search(user.id, question, scope)
+        rw = rewriter.rewrite(question, history)
+        if rw.rewritten:
+            yield _event("rewrite", {"search_query": rw.search_query, "question": rw.question})
+        result = self.retrieval.search(user.id, rw.search_query, scope)
         sources = result.chunks
         retrieved = [to_citation(i, s).model_dump() for i, s in enumerate(sources, start=1)]
 
         if not passes_gate(sources, self.min_rerank_score):
             yield from self._finish(user, question, conversation_id, FALLBACK_MESSAGE, [], False, retrieved)
             return
-        if llm is None:
+        if answerer is None:
             yield _event("error", {"code": "no_api_key", "message": NO_KEY_MESSAGE})
             return
 
         full, emitted = "", 0
         started = time.perf_counter()
         try:
-            for delta in llm.stream(SYSTEM_PROMPT, build_user_prompt(question, sources)):
+            for delta in answerer.stream(rw.question, sources):
                 full += delta
                 if could_become_no_answer(full) or is_no_answer(full):
                     continue  # never let the sentinel reach the screen
@@ -121,7 +144,15 @@ class ChatService:
         except LLMError as exc:
             yield _event("error", {"code": "llm_error", "message": str(exc)})
             return
-        log.info("llm", extra={"user_id": user.id, "latency_ms": round((time.perf_counter() - started) * 1000)})
+        log.info(
+            "answer",
+            extra={
+                "user_id": user.id,
+                "provider": answerer.provider,
+                "rewritten": rw.rewritten,
+                "latency_ms": round((time.perf_counter() - started) * 1000),
+            },
+        )
 
         if is_no_answer(full) or not full.strip():
             yield from self._finish(user, question, conversation_id, FALLBACK_MESSAGE, [], False, retrieved)

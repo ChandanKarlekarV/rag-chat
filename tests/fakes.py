@@ -26,6 +26,26 @@ class FakeEmbedder:
         return self._vec(text)
 
 
+class FakeReader:
+    """Extractive-reader double: the sentence with the most question words is the 'answer span'."""
+
+    def best_spans(self, question: str, sources: list[RetrievedChunk]):
+        from app.generation.reader import Span
+
+        q = set(tokenize(question))
+        spans = []
+        for i, s in enumerate(sources, start=1):
+            text = s.chunk.text
+            best, pos = (0, 0, len(text)), 0
+            for sentence in text.split(". "):
+                overlap = len(q & set(tokenize(sentence)))
+                if overlap > best[0]:
+                    best = (overlap, pos, pos + len(sentence))
+                pos += len(sentence) + 2
+            spans.append(Span(i, best[1], best[2], float(best[0]) - 1.0))
+        return sorted(spans, key=lambda sp: sp.margin, reverse=True)
+
+
 class FakeReranker:
     """Scores by query-term overlap, shifted so zero overlap is clearly negative."""
 

@@ -20,6 +20,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/evaluate.py" = ["E402"]  # sys.path tweak must precede app imports
+"scripts/judge.py" = ["E402"]
 "scripts/make_sample_pdf.py" = ["E501"]  # long prose paragraphs of the sample manual
 
 [tool.ruff.format]
