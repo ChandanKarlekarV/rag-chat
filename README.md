@@ -93,13 +93,13 @@ Measured on an RTX 5070 Laptop GPU (the full development run takes about 40 seco
 
 | Config | Hit@1 | Hit@5 | MRR | Gate fallback acc. | Latency / query |
 |---|---|---|---|---|---|
-| Vector only | 0.80 | 0.97 | 0.88 | n/a | 14 ms |
-| Hybrid (RRF) | 0.93 | 1.00 | 0.95 | n/a | 10 ms |
-| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 31 ms |
+| Vector only | 0.80 | 0.97 | 0.88 | n/a | 13 ms |
+| Hybrid (RRF) | 0.93 | 1.00 | 0.95 | n/a | 9 ms |
+| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 32 ms |
 
 | Mode | Correct (fact + page) | Contains gold | F1 | EM | Citation acc. | Fallback acc. | Median latency |
 |---|---|---|---|---|---|---|---|
-| Local | **30/30 (100%)** | 29/30 | 0.75 | 0.50 | 1.00 | **8/8** | 139 ms |
+| Local | **30/30 (100%)** | 30/30 | 0.75 | 0.50 | 1.00 | **8/8** | 139 ms |
 | Ollama | skipped (Ollama not installed on the build machine) | | | | | | |
 | Claude API | skipped (no API key on the build machine) | | | | | | |
 
@@ -116,7 +116,7 @@ Written after the model and threshold choices were made:
 
 | Mode | Correct (fact + page) | Contains gold | F1 | EM | Citation acc. | Fallback acc. | Median latency |
 |---|---|---|---|---|---|---|---|
-| Local | **14/14 (100%)** | 14/14 | 0.80 | 0.50 | 1.00 | **4/4** | 149 ms |
+| Local | **14/14 (100%)** | 14/14 | 0.80 | 0.50 | 1.00 | **4/4** | 148 ms |
 
 The earlier single-answer version of the Local mode missed one held-out question ("Which safety standards…" got the IP56 rating). The answer-modes design fixes it: combined scoring plus quoted supporting sentences. That fix came from the spec's design, not from tuning on this set, but the set has now been seen twice, so treat it as a strong check rather than a pristine one.
 

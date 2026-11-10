@@ -91,6 +91,18 @@ def test_extractive_answer_is_span_plus_quoted_sentences():
             assert line[2:].rsplit(" [", 1)[0] in TEXT
 
 
+def test_supporting_sentences_are_not_repeated_across_overlapping_chunks():
+    shared = "The warranty ends after 12 years."
+    a, b = f"Halcyon warrants the H2. {shared}", f"{shared} Register transfers in the app."
+    start = a.index("12 years")
+    provider = _local([Span(1, start, start + 8, 5.0)])
+    text = "".join(
+        e.text for e in provider.answer("When does the warranty end?", [_src(a), _src(b, page=2)], "factoid")
+    )
+    quotes = [line for line in text.splitlines() if line.startswith("> ")]
+    assert sum(shared in q for q in quotes) == 1
+
+
 def test_extractive_refuses_when_not_confident_or_wrong_type():
     start = TEXT.index("118 kg")
     unsure = _local([Span(1, start, start + 6, -6.0)])  # sigmoid(-6) ≈ 0.002 < 0.05

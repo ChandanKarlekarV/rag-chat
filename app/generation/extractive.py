@@ -91,6 +91,10 @@ def split_sentences(text: str, source: int) -> list[Sentence]:
     return out
 
 
+def _key(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
 def _quote(s: Sentence) -> str:
     return f"> {s.text} [{s.source}]"
 
@@ -147,9 +151,15 @@ class LocalExtractiveProvider:
             return []
         scores = self.scorer(question, [s.text for s in candidates])
         ranked = sorted(zip(scores, candidates, strict=True), key=lambda x: x[0], reverse=True)
-        keep = [s for score, s in ranked if score >= MIN_SENTENCE_SCORE][: self.max_sentences]
-        if must_include is not None and must_include not in keep:
-            keep = [must_include, *keep][: self.max_sentences]
+        keep: list[Sentence] = []
+        seen: set[str] = set()
+        if must_include is not None:
+            keep.append(must_include)
+            seen.add(_key(must_include.text))
+        for score, s in ranked:  # chunks overlap, so the same sentence can appear twice: keep one
+            if score >= MIN_SENTENCE_SCORE and _key(s.text) not in seen and len(keep) < self.max_sentences:
+                keep.append(s)
+                seen.add(_key(s.text))
         position = {i: n for n, i in enumerate(order)}
         return sorted(keep, key=lambda s: (position[s.source], s.start))
 
