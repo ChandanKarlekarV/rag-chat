@@ -117,7 +117,8 @@ def create_app(services: Services | None = None) -> FastAPI:
                 yield _sse("error", {"message": NO_DOCS_MESSAGE})
                 return
             try:
-                sources = s.retriever.retrieve(body.question, body.top_k, body.doc_ids or None)
+                top_k = body.top_k or s.settings.top_k
+                sources = s.retriever.retrieve(body.question, top_k, body.doc_ids or None)
             except Exception:
                 log.exception("retrieval failed")
                 yield _sse("error", {"message": "Search failed unexpectedly. Please try again."})

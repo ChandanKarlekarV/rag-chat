@@ -65,7 +65,7 @@ class AskRequest(BaseModel):
 
     question: str = Field(min_length=1, max_length=2000)
     doc_ids: Optional[list[str]] = None
-    top_k: int = Field(default=5, ge=1, le=10)
+    top_k: Optional[int] = Field(default=None, ge=1, le=10)  # None -> TOP_K setting
 
 
 class AskResponse(BaseModel):
