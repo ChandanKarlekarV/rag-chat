@@ -47,7 +47,9 @@ def ask(
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
-def conversations(user: User = Depends(get_current_user), c: Container = Depends(get_container)) -> list[ConversationOut]:
+def conversations(
+    user: User = Depends(get_current_user), c: Container = Depends(get_container)
+) -> list[ConversationOut]:
     """The user's conversation history."""
     return c.chat.list_conversations(user.id)
 
@@ -87,10 +89,14 @@ def llm_check(
     llm, source = c.resolve_llm(user_key)
     provider, model = c.settings.llm_provider, c.settings.llm_model
     if llm is None:
-        return LLMCheckResponse(ok=False, source="none", provider=provider, model=model, message="No API key added yet.")
+        return LLMCheckResponse(
+            ok=False, source="none", provider=provider, model=model, message="No API key added yet."
+        )
     try:
         llm.check()
     except LLMError as exc:
         return LLMCheckResponse(ok=False, source=source, provider=provider, model=model, message=str(exc))  # type: ignore[arg-type]
     label = "offline demo model" if llm.provider == "fake" else model
-    return LLMCheckResponse(ok=True, source=source, provider=provider, model=llm.model, message=f"Connected to {label}.")  # type: ignore[arg-type]
+    return LLMCheckResponse(
+        ok=True, source=source, provider=provider, model=llm.model, message=f"Connected to {label}."
+    )  # type: ignore[arg-type]

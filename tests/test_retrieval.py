@@ -13,13 +13,20 @@ from app.services.retrieval_service import passes_gate
 
 def _rc(i: int, rerank: float | None = None, page: int = 1) -> RetrievedChunk:
     chunk = Chunk(
-        chunk_id=f"d:{i}", doc_id="d", filename="f.pdf", page_start=page, page_end=page,
-        index=i, text=f"chunk text {i}. Second sentence here.", token_count=3,
+        chunk_id=f"d:{i}",
+        doc_id="d",
+        filename="f.pdf",
+        page_start=page,
+        page_end=page,
+        index=i,
+        text=f"chunk text {i}. Second sentence here.",
+        token_count=3,
     )
     return RetrievedChunk(chunk=chunk, rerank_score=rerank)
 
 
 # ---------- RRF ----------
+
 
 def test_rrf_scores_match_formula():
     fused = dict(rrf_fuse([["a", "b", "c"], ["b", "d"]], k=60))
@@ -42,17 +49,23 @@ def test_rrf_is_deterministic_on_ties_and_handles_empty():
 
 # ---------- BM25 ----------
 
+
 def _chunk(cid: str, doc: str, text: str) -> Chunk:
-    return Chunk(chunk_id=cid, doc_id=doc, filename=f"{doc}.pdf", page_start=1, page_end=1, index=0, text=text, token_count=5)
+    return Chunk(
+        chunk_id=cid, doc_id=doc, filename=f"{doc}.pdf", page_start=1, page_end=1, index=0, text=text, token_count=5
+    )
 
 
 def test_bm25_is_per_user_and_filters_docs(tmp_path):
     store = BM25Store(tmp_path)
-    store.rebuild("alice", [
-        _chunk("a:0", "a", "The warranty lasts twelve years."),
-        _chunk("a:1", "a2", "Vents need cleaning."),
-        _chunk("a:2", "a2", "The status light is green."),
-    ])
+    store.rebuild(
+        "alice",
+        [
+            _chunk("a:0", "a", "The warranty lasts twelve years."),
+            _chunk("a:1", "a2", "Vents need cleaning."),
+            _chunk("a:2", "a2", "The status light is green."),
+        ],
+    )
     store.rebuild("bob", [_chunk("b:0", "b", "Firmware updates install at night.")])
     assert store.search("alice", "how long is the warranty", 5)[0][0] == "a:0"
     assert store.search("bob", "warranty", 5) == []  # Bob never sees Alice's corpus
@@ -74,6 +87,7 @@ def test_tokenize_drops_stopwords():
 
 # ---------- gate ----------
 
+
 def test_gate_passes_only_above_threshold():
     assert passes_gate([_rc(0, -5.0), _rc(1, 1.5)], min_score=0.0)
     assert not passes_gate([_rc(0, -5.0), _rc(1, -0.1)], min_score=0.0)
@@ -86,6 +100,7 @@ def test_gate_fails_without_results_or_scores():
 
 
 # ---------- NO_ANSWER ----------
+
 
 @pytest.mark.parametrize("text", ["NO_ANSWER", " no_answer.", "NO_ANSWER\n"])
 def test_is_no_answer(text):
@@ -100,6 +115,7 @@ def test_prefix_holdback():
 
 
 # ---------- citations ----------
+
 
 def test_cited_numbers_handles_all_formats():
     assert cited_numbers("a [2] b [1][3] c [2, 4] d [10]") == [2, 1, 3, 4, 10]

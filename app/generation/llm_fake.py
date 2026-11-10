@@ -1,7 +1,8 @@
 """Deterministic `LLMClient` for tests and offline demos (`LLM_PROVIDER=fake`).
 
 With a scripted `answer` it replays that text. Otherwise it is *extractive*: it answers with the
-first sentences of source [1] and cites it, so the full UI flow works without any API key.
+one or two sentences of source [1] that share the most words with the question, and cites [1],
+so the full UI flow works without any API key. It never invents text.
 """
 
 import re
@@ -10,7 +11,47 @@ from collections.abc import Iterator
 from app.generation.llm_base import LLMError
 
 _SOURCE_1 = re.compile(r"\[1\] \([^)]*\)\n(.+?)(?:\n\n\[2\]|\n</sources>)", re.S)
+_QUESTION = re.compile(r"QUESTION: (.+)$", re.S)
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
+_WORD = re.compile(r"[a-z0-9]+")
+_STOP = frozenset(
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    ]
+)
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in _WORD.findall(text.lower()) if w not in _STOP}
 
 
 class FakeLLM:
@@ -26,11 +67,15 @@ class FakeLLM:
         self.calls: list[tuple[str, str]] = []
 
     def _extractive(self, user: str) -> str:
-        match = _SOURCE_1.search(user)
-        if not match:
+        source = _SOURCE_1.search(user)
+        if not source:
             return "NO_ANSWER"
-        sentences = _SENTENCE.split(match.group(1).strip())
-        return " ".join(sentences[:2]) + " [1]"
+        q = _QUESTION.search(user)
+        wanted = _words(q.group(1)) if q else set()
+        sentences = [s for s in _SENTENCE.split(source.group(1).strip()) if s]
+        ranked = sorted(range(len(sentences)), key=lambda i: (-len(wanted & _words(sentences[i])), i))
+        best = sorted(ranked[:2])
+        return " ".join(sentences[i] for i in best) + " [1]"
 
     def stream(self, system: str, user: str) -> Iterator[str]:
         """Yield the scripted or extractive answer in small deltas."""

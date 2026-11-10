@@ -1,6 +1,6 @@
 """Integration tests: auth, documents, ask flow, conversations, isolation, CSRF, error shape."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.db.models import User
 from app.db.repositories import UserRepo
@@ -10,6 +10,7 @@ QUESTION = "How much usable energy capacity does the battery have?"
 
 
 # ---------- auth ----------
+
 
 def test_register_login_me_logout(h):
     c = h.client
@@ -78,7 +79,7 @@ def test_expired_guests_are_cleaned_up(h):
     container = h.client.app.state.container
     with container.db.session() as s:
         guest = s.query(User).filter(User.is_guest.is_(True)).one()
-        guest.created_at = datetime.now(timezone.utc) - timedelta(hours=25)
+        guest.created_at = datetime.now(UTC) - timedelta(hours=25)
         guest_id = guest.id
     assert container.auth.cleanup_guests() == 1
     assert h.client.get("/auth/me").status_code == 401
@@ -91,6 +92,7 @@ def test_unauthenticated_requests_get_401_error_shape(h):
 
 
 # ---------- documents ----------
+
 
 def test_upload_processes_to_ready_and_dedupes(h, sample_pdf):
     c = h.client
@@ -123,8 +125,19 @@ def test_upload_rejects_non_pdf_and_textless_pdf(h, tmp_path):
     doc.save(blank)
     r = upload(c, blank)
     assert r.status_code == 202
-    status = c.get(f"/documents/{r.json()['id']}/status").json()
+    doc_id = r.json()["id"]
+    status = c.get(f"/documents/{doc_id}/status").json()
     assert status["status"] == "failed" and "no selectable text" in status["error"]
+    retried = c.post(f"/documents/{doc_id}/retry", headers=CSRF)
+    assert retried.status_code == 202  # runs again (and fails again: still no text)
+    assert c.get(f"/documents/{doc_id}/status").json()["status"] == "failed"
+
+
+def test_retry_only_for_failed_documents(h, sample_pdf):
+    register(h.client)
+    doc_id = upload(h.client, sample_pdf).json()["id"]
+    r = h.client.post(f"/documents/{doc_id}/retry", headers=CSRF)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "not_failed"
 
 
 def test_document_quota(tmp_path, sample_pdf):
@@ -143,6 +156,7 @@ def test_document_quota(tmp_path, sample_pdf):
 
 
 # ---------- ask ----------
+
 
 def test_ask_streams_answer_with_citations_and_persists(h, sample_pdf):
     c = h.client
@@ -206,6 +220,7 @@ def test_conversation_rename_and_delete(h, sample_pdf):
 
 # ---------- isolation ----------
 
+
 def test_user_b_cannot_see_or_retrieve_user_a_documents(h, sample_pdf):
     alice = h.client
     register(alice, "alice@example.com")
@@ -231,6 +246,7 @@ def test_user_b_cannot_see_or_retrieve_user_a_documents(h, sample_pdf):
 
 
 # ---------- llm check & health ----------
+
 
 def test_llm_check_sources(h, tmp_path, sample_pdf):
     c = h.client

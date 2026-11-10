@@ -3,7 +3,7 @@
 import logging
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import jwt
@@ -42,7 +42,7 @@ class AuthService:
 
     def issue_token(self, user_id: str) -> str:
         """Signed JWT valid for `SESSION_DAYS`."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {"sub": user_id, "iat": now, "exp": now + timedelta(days=self.settings.session_days)}
         return jwt.encode(payload, self.settings.secret_key, algorithm=_ALGO)
 
@@ -113,7 +113,7 @@ class AuthService:
 
     def cleanup_guests(self) -> int:
         """Delete guests older than `GUEST_TTL_HOURS` with all their data. Returns how many."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.settings.guest_ttl_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=self.settings.guest_ttl_hours)
         with self.db.session() as s:
             ids = UserRepo(s).expired_guest_ids(cutoff)
         for user_id in ids:

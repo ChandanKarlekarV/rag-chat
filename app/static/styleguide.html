@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>rag-chat · Styleguide</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("rag-theme:last"); } catch (e) {}
+      var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>tailwind.config = { corePlugins: { preflight: false } };</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
+  <style>
+    /* Styleguide-only: show overlay components in place instead of fixed to the viewport. */
+    .sg-frame { position: relative; border: var(--border-width) dashed var(--color-border); border-radius: var(--radius-lg); padding: var(--space-4); background: var(--color-bg); }
+    .sg-frame .c-drawer { position: relative; transform: none; width: 100%; max-height: none; border-radius: var(--radius-lg); border: var(--border-width) solid var(--color-border); }
+    .sg-frame .c-modal-wrap { position: relative; padding: 0; }
+    .sg-frame .c-toasts { position: relative; left: auto; bottom: auto; transform: none; width: 100%; }
+    .sg-frame .c-popover, .sg-frame .c-menu__list { position: relative; top: auto; right: auto; }
+    .sg-swatch { height: var(--space-12); border-radius: var(--radius-md); border: var(--border-width) solid var(--color-border); }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" class="sr-only" aria-hidden="true">
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 7l2 2M14 9l2 2"/></symbol>
+  </svg>
+
+  <main class="mx-auto flex flex-col gap-12 px-4 py-10 md:px-6" style="max-width: 960px">
+    <header class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex flex-col gap-1">
+        <h1 class="c-title">rag-chat styleguide</h1>
+        <p class="c-text u-muted">Every component from DESIGN_SYSTEM.md, built only from tokens. Flat color only.</p>
+      </div>
+      <div class="c-segmented" role="group" aria-label="Theme">
+        <button type="button" data-t="light" aria-pressed="false">Light</button>
+        <button type="button" data-t="dark" aria-pressed="false">Dark</button>
+      </div>
+    </header>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-color">
+      <h2 class="c-heading" id="sg-color">Color tokens</h2>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-swatches></div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-type">
+      <h2 class="c-heading" id="sg-type">Typography</h2>
+      <div class="c-card flex flex-col gap-2">
+        <p class="c-title">Title · text-xl 24/32</p>
+        <p class="c-heading">Heading · text-lg 18/28</p>
+        <p class="c-text">Body · text-base 16/24. Answers use this size with a 72ch measure.</p>
+        <p class="c-label">Label · text-sm 14/20</p>
+        <p class="c-meta">Meta · text-xs 12/16</p>
+        <p class="c-section-label">Section label</p>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-btn">
+      <h2 class="c-heading" id="sg-btn">Button</h2>
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="c-btn c-btn--primary">Upload PDF</button>
+        <button class="c-btn c-btn--secondary">Secondary</button>
+        <button class="c-btn c-btn--ghost">Ghost</button>
+        <button class="c-btn c-btn--danger">Delete</button>
+        <button class="c-btn c-btn--primary" disabled>Disabled</button>
+        <button class="c-btn c-btn--primary" aria-busy="true" disabled><span class="c-spinner" aria-hidden="true"></span><span class="c-btn__label">Loading…</span></button>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="c-btn c-btn--primary c-btn--sm"><svg class="c-icon"><use href="#i-send"/></svg>Ask</button>
+        <button class="c-btn c-btn--secondary c-btn--sm">Small</button>
+        <button class="c-btn c-btn--ghost c-btn--icon" aria-label="Close"><svg class="c-icon"><use href="#i-x"/></svg></button>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-input">
+      <h2 class="c-heading" id="sg-input">Input, textarea and choices</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="c-field">
+          <label class="c-label" for="sg-email">Email</label>
+          <input class="c-input" id="sg-email" type="email" placeholder="name@example.com" aria-describedby="sg-email-help" />
+          <p class="c-help" id="sg-email-help">We'll never share it.</p>
+        </div>
+        <div class="c-field">
+          <label class="c-label" for="sg-pass">Password</label>
+          <input class="c-input" id="sg-pass" type="password" value="short" aria-invalid="true" aria-describedby="sg-pass-error" />
+          <p class="c-error-text" id="sg-pass-error"><svg class="c-icon"><use href="#i-alert"/></svg><span>Use at least 8 characters for your password.</span></p>
+        </div>
+        <div class="c-field">
+          <label class="c-label" for="sg-dis">Disabled</label>
+          <input class="c-input" id="sg-dis" value="Not editable" disabled />
+        </div>
+        <div class="c-field">
+          <label class="c-label" for="sg-ta">Textarea</label>
+          <textarea class="c-textarea" id="sg-ta" rows="2">Ask a question…</textarea>
+        </div>
+        <div class="c-field">
+          <span class="c-label">Password strength</span>
+          <div class="c-strength" data-level="2"><span class="c-strength__bar"></span><span class="c-strength__bar"></span><span class="c-strength__bar"></span></div>
+          <p class="c-help">Okay. A longer password is stronger.</p>
+        </div>
+        <div class="flex flex-col gap-3">
+          <label class="c-check"><input type="checkbox" checked />Remember on this device</label>
+          <span class="flex items-center gap-3"><span class="c-switch"><input type="checkbox" role="switch" aria-label="Show retrieval scores" checked /><span class="c-switch__track"></span></span><span class="c-label">Switch</span></span>
+          <div class="c-segmented" role="group" aria-label="Segmented"><button type="button" aria-pressed="true">System</button><button type="button" aria-pressed="false">Light</button><button type="button" aria-pressed="false">Dark</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-card">
+      <h2 class="c-heading" id="sg-card">Card, tabs, steps, notice, progress</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="c-card flex flex-col gap-3">
+          <div class="c-tabs" role="tablist"><button class="c-tabs__tab" role="tab" aria-selected="true">Documents</button><button class="c-tabs__tab" role="tab" aria-selected="false">Conversations</button></div>
+          <ol class="c-steps"><li><span class="c-steps__num">1</span>Upload</li><li><span class="c-steps__num">2</span>Ask</li><li><span class="c-steps__num">3</span>Check sources</li></ol>
+        </div>
+        <div class="flex flex-col gap-3">
+          <div class="c-notice"><span class="flex items-center gap-2"><svg class="c-icon"><use href="#i-key"/></svg>Add your Anthropic API key to get written answers.</span><button class="c-btn c-btn--secondary c-btn--sm">Add API key</button></div>
+          <div class="c-progress" role="progressbar" aria-label="Processing" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100"><div class="c-progress__bar" style="width: 60%"></div></div>
+          <p class="c-scope"><svg class="c-icon"><use href="#i-search"/></svg>Searching <strong>2 of 3</strong> documents</p>
+          <p class="flex items-center gap-2"><span class="c-dot c-dot--ok"></span><span class="c-meta">Claude connected</span><span class="c-dot c-dot--warn"></span><span class="c-meta">No key</span><span class="c-dot c-dot--bad"></span><span class="c-meta">Not working</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-docs">
+      <h2 class="c-heading" id="sg-docs">Dropzone, document rows, status badges</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="flex flex-col gap-3">
+          <label class="c-dropzone"><svg class="c-icon c-icon--lg c-dropzone__icon"><use href="#i-upload"/></svg><span>Drop a PDF here or <span class="c-dropzone__link">choose a file</span></span><span class="c-meta">PDF, up to 20 MB</span><input type="file" class="sr-only" /></label>
+          <label class="c-dropzone" data-state="dragover"><svg class="c-icon c-icon--lg c-dropzone__icon"><use href="#i-upload"/></svg><span>Drag-over state</span><span class="c-meta">PDF, up to 20 MB</span><input type="file" class="sr-only" /></label>
+        </div>
+        <ul class="flex flex-col gap-1" style="list-style: none; margin: 0; padding: 0">
+          <li class="c-doc-row"><input type="checkbox" class="c-doc-row__check" disabled aria-label="Include" /><span class="c-doc-row__icon"><svg class="c-icon"><use href="#i-doc"/></svg></span>
+            <div class="c-doc-row__body"><span class="c-doc-row__name u-truncate">annual-report-2026.pdf</span><div class="c-progress"><div class="c-progress__bar" style="width: 45%"></div></div>
+              <span class="c-doc-row__meta"><span class="c-meta">Nov 10</span><span class="c-badge c-badge--processing"><span class="c-spinner" aria-hidden="true"></span>Understanding · 45%</span></span></div></li>
+          <li class="c-doc-row" data-state="selected"><input type="checkbox" class="c-doc-row__check" checked aria-label="Include" /><span class="c-doc-row__icon"><svg class="c-icon"><use href="#i-doc"/></svg></span>
+            <div class="c-doc-row__body"><span class="c-doc-row__name u-truncate">halcyon_h2_handbook.pdf</span><span class="c-doc-row__meta"><span class="c-meta">10 pages · Nov 10</span><span class="c-badge c-badge--ready"><svg class="c-icon"><use href="#i-check"/></svg>Ready</span></span></div>
+            <button class="c-btn c-btn--ghost c-btn--icon c-btn--sm" aria-label="More actions"><svg class="c-icon"><use href="#i-dots"/></svg></button></li>
+          <li class="c-doc-row"><input type="checkbox" class="c-doc-row__check" disabled aria-label="Include" /><span class="c-doc-row__icon"><svg class="c-icon"><use href="#i-doc"/></svg></span>
+            <div class="c-doc-row__body"><span class="c-doc-row__name u-truncate">scan.pdf</span><span class="c-doc-row__meta"><span class="c-meta">Nov 10</span><span class="c-badge c-badge--failed"><svg class="c-icon"><use href="#i-alert"/></svg>Failed</span><button class="c-badge__action c-meta">Retry</button></span>
+              <span class="c-meta c-meta--danger">This PDF has no selectable text (it may be a scan). Try a text-based PDF.</span></div></li>
+        </ul>
+      </div>
+      <div class="sg-frame flex flex-wrap items-start gap-4">
+        <ul class="c-menu__list" role="menu"><li role="none"><button class="c-menu__item" role="menuitem">Rename</button></li><li role="none"><button class="c-menu__item c-menu__item--danger" role="menuitem">Delete</button></li></ul>
+        <div class="c-popover" role="dialog" aria-label="Keyboard shortcuts"><p class="c-label">Keyboard shortcuts</p><dl><dt><kbd class="c-kbd">Enter</kbd></dt><dd>Send</dd><dt><kbd class="c-kbd">/</kbd></dt><dd>Focus the question box</dd><dt><kbd class="c-kbd">Esc</kbd></dt><dd>Close panels</dd></dl></div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-chat">
+      <h2 class="c-heading" id="sg-chat">Chat messages, citation chips, fallback</h2>
+      <div class="c-thread">
+        <div class="c-msg c-msg--user"><div class="c-msg__body">How long is the battery warranty?</div></div>
+        <div class="c-msg c-msg--assistant">
+          <div class="c-msg__body"><p>The H2 is covered for <strong>12 years</strong> from installation<button class="c-chip" aria-label="Open source 1">1</button>, and keeps at least 70 percent of its capacity<button class="c-chip" aria-label="Open source 1">1</button><button class="c-chip" aria-label="Open source 2">2</button>.</p></div>
+          <div class="c-msg__sources"><span class="c-meta">Sources</span>
+            <button class="c-chip c-chip--source"><span class="c-chip__n">[1]</span><span class="u-truncate">halcyon_h2_handbook.pdf</span><span class="c-chip__page">p. 9</span></button>
+            <button class="c-chip c-chip--source"><span class="c-chip__n">[2]</span><span class="u-truncate">halcyon_h2_handbook.pdf</span><span class="c-chip__page">pp. 9–10</span></button></div>
+          <div class="c-msg__actions" data-state="always"><button class="c-btn c-btn--ghost c-btn--sm"><svg class="c-icon"><use href="#i-copy"/></svg>Copy</button><button class="c-btn c-btn--ghost c-btn--sm"><svg class="c-icon"><use href="#i-retry"/></svg>Retry</button></div>
+        </div>
+        <div class="c-msg c-msg--assistant">
+          <div class="c-msg__body" data-state="streaming">The answer streams in token by token</div>
+        </div>
+        <div class="c-msg c-msg--assistant">
+          <div class="c-fallback"><p class="c-fallback__title"><svg class="c-icon"><use href="#i-search"/></svg>I couldn't find this in your documents.</p>
+            <p class="c-help">The answer doesn't seem to be in the selected PDFs, so I won't guess. You can:</p>
+            <div class="c-fallback__actions"><button class="c-btn c-btn--secondary c-btn--sm">Rephrase the question</button><button class="c-btn c-btn--secondary c-btn--sm"><svg class="c-icon"><use href="#i-upload"/></svg>Upload a relevant PDF</button></div></div>
+        </div>
+        <div class="c-msg c-msg--assistant">
+          <div class="c-msg__error" role="alert"><svg class="c-icon"><use href="#i-alert"/></svg><p>The language model took too long to answer. Please try again.</p></div>
+        </div>
+        <div class="c-table-wrap"><table class="c-table"><thead><tr><th>#</th><th>Source</th><th class="num">Vector</th><th class="num">BM25</th><th class="num">RRF</th><th class="num">Rerank</th></tr></thead>
+          <tbody><tr aria-current="true"><td>1 ✓</td><td>halcyon_h2_handbook.pdf · p. 9</td><td class="num">0.712</td><td class="num">4.21</td><td class="num">0.0325</td><td class="num">3.15</td></tr>
+          <tr><td>2</td><td>halcyon_h2_handbook.pdf · p. 7</td><td class="num">0.598</td><td class="num">—</td><td class="num">0.0161</td><td class="num">-6.40</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-empty">
+      <h2 class="c-heading" id="sg-empty">Empty state and skeleton</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="c-card"><div class="c-empty" style="padding: var(--space-4)"><span class="c-empty__icon"><svg class="c-icon c-icon--lg"><use href="#i-chat"/></svg></span><h3 class="c-heading">Ask about your documents</h3><p class="c-text u-muted">Every answer links to the page it came from.</p>
+          <div class="c-empty__samples"><button class="c-sample"><svg class="c-icon"><use href="#i-chat"/></svg><span>How long is the battery warranty?</span></button><button class="c-sample"><svg class="c-icon"><use href="#i-chat"/></svg><span>What does a solid red light mean?</span></button></div></div></div>
+        <div class="c-card flex flex-col gap-3" aria-hidden="true"><div class="c-skeleton c-skeleton--row"></div><div class="c-skeleton c-skeleton--line"></div><div class="c-skeleton c-skeleton--line" style="width: 60%"></div></div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-4" aria-labelledby="sg-overlay">
+      <h2 class="c-heading" id="sg-overlay">Source drawer, modal, toast (shown in place)</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="sg-frame">
+          <aside class="c-drawer" aria-label="Source drawer example">
+            <div class="c-drawer__head"><div class="min-w-0"><p class="c-meta">Source [1]</p><h3 class="c-heading u-truncate">halcyon_h2_handbook.pdf</h3><p class="c-help">Page 9</p></div><button class="c-btn c-btn--ghost c-btn--icon" aria-label="Close source"><svg class="c-icon"><use href="#i-x"/></svg></button></div>
+            <div class="c-drawer__body"><div class="flex flex-col gap-2"><p class="c-section-label">Passage used for the answer</p><blockquote class="c-passage">Halcyon warrants the H2 against defects for <mark>12 years</mark> from the date of installation.</blockquote></div>
+              <dl class="c-scores"><div><dt>Vector (cosine)</dt><dd>0.712</dd></div><div><dt>Rerank</dt><dd>3.15</dd></div></dl></div>
+          </aside>
+        </div>
+        <div class="flex flex-col gap-4">
+          <div class="sg-frame"><div class="c-modal-wrap"><div class="c-modal" role="alertdialog" aria-labelledby="sg-modal-t"><h3 class="c-heading" id="sg-modal-t">Delete this document?</h3><p class="c-text u-muted">"scan.pdf" and everything indexed from it will be removed. This can't be undone.</p><div class="c-modal__actions"><button class="c-btn c-btn--secondary">Cancel</button><button class="c-btn c-btn--danger">Delete</button></div></div></div></div>
+          <div class="sg-frame"><div class="c-toasts">
+            <div class="c-toast c-toast--success" role="status"><span class="c-toast__icon"><svg class="c-icon"><use href="#i-check"/></svg></span><p class="c-toast__msg">halcyon_h2_handbook.pdf is ready. Ask away.</p></div>
+            <div class="c-toast c-toast--error" role="alert"><span class="c-toast__icon"><svg class="c-icon"><use href="#i-alert"/></svg></span><p class="c-toast__msg">"notes.txt" isn't a PDF. Choose a .pdf file.</p><button class="c-btn c-btn--ghost c-btn--icon c-btn--sm" aria-label="Dismiss"><svg class="c-icon"><use href="#i-x"/></svg></button></div>
+          </div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    var TOKENS = ["bg", "surface", "surface-muted", "border", "text", "text-muted", "primary", "primary-subtle", "accent", "accent-subtle", "success", "success-subtle", "danger", "danger-subtle", "border-input", "focus"];
+    document.querySelector("[data-swatches]").innerHTML = TOKENS.map(function (t) {
+      return '<div class="flex flex-col gap-1"><div class="sg-swatch" style="background: var(--color-' + t + ')"></div><span class="c-meta">--color-' + t + "</span></div>";
+    }).join("");
+    function mark() {
+      document.querySelectorAll("[data-t]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.t === document.documentElement.dataset.theme)); });
+    }
+    document.querySelectorAll("[data-t]").forEach(function (b) {
+      b.addEventListener("click", function () { document.documentElement.dataset.theme = b.dataset.t; mark(); });
+    });
+    mark();
+  </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 """Unit tests for cleaning and chunking."""
 
+import itertools
 import re
 
 import pytest
@@ -15,10 +16,7 @@ def _sentence(i: int) -> str:
 
 @pytest.fixture
 def pages() -> list[PageText]:
-    return [
-        PageText(page=p, text=" ".join(_sentence(p * 100 + i) for i in range(25)))
-        for p in range(1, 5)
-    ]
+    return [PageText(page=p, text=" ".join(_sentence(p * 100 + i) for i in range(25))) for p in range(1, 5)]
 
 
 def test_no_empty_chunks_and_size_limit(pages):
@@ -38,7 +36,7 @@ def test_ids_and_indexes_are_sequential(pages):
 
 def test_overlap_is_whole_sentences_within_budget(pages):
     chunks = chunk_pages(pages, "doc", "a.pdf", size=800, overlap=150)
-    for prev, nxt in zip(chunks, chunks[1:]):
+    for prev, nxt in itertools.pairwise(chunks):
         prev_sents = split_sentences(prev.text)
         nxt_sents = split_sentences(nxt.text)
         shared = next(
@@ -90,14 +88,12 @@ def test_cleaner_removes_repeated_headers_and_page_numbers():
         for i, w in enumerate(words, start=1)
     ]
     cleaned = clean_pages(pages)
-    for p, w in zip(cleaned, words):
+    for p, w in zip(cleaned, words, strict=True):
         assert p.text == f"All about {w}. More on {w} here."
 
 
 def test_cleaner_keeps_body_lines_that_only_differ_by_numbers():
-    pages = [
-        PageText(page=i, text=f"Header\nIntro.\nTable row {i}.\nBody.\nMore body.\nFooter") for i in range(1, 5)
-    ]
+    pages = [PageText(page=i, text=f"Header\nIntro.\nTable row {i}.\nBody.\nMore body.\nFooter") for i in range(1, 5)]
     cleaned = clean_pages(pages)
     assert all(f"Table row {i}." in p.text for i, p in enumerate(cleaned, start=1))
     assert all("Header" not in p.text and "Footer" not in p.text for p in cleaned)

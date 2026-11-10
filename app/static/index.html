@@ -1,194 +1,300 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>rag-chat · Chat with your docs</title>
-  <meta name="description" content="Upload PDFs and ask questions. Answers are grounded in your documents with page-level citations." />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><path d='M9 10h14M9 16h14M9 22h8' stroke='white' stroke-width='2.5' stroke-linecap='round'/></svg>" />
+  <meta name="description" content="Upload PDFs and ask questions. Answers come only from your documents, with page-level citations." />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <script>
+    // Apply the theme before first paint: saved choice, else the OS preference.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("rag-theme:last"); } catch (e) {}
+      var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    })();
+  </script>
+  <!-- Tailwind v3 Play CDN (verified syntax: v3.tailwindcss.com/docs/installation/play-cdn). Layout utilities only. -->
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
   <script>
     tailwind.config = {
-      darkMode: "media",
-      theme: { extend: { fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"] } } },
+      corePlugins: { preflight: false },
+      theme: { extend: {
+        colors: {
+          bg: "var(--color-bg)", surface: "var(--color-surface)",
+          muted: "var(--color-surface-muted)", border: "var(--color-border)",
+          ink: "var(--color-text)", "ink-muted": "var(--color-text-muted)",
+          primary: "var(--color-primary)", "primary-hover": "var(--color-primary-hover)",
+          "primary-subtle": "var(--color-primary-subtle)",
+          accent: "var(--color-accent)", "accent-subtle": "var(--color-accent-subtle)",
+          danger: "var(--color-danger)", success: "var(--color-success)"
+        },
+        borderRadius: { sm: "6px", md: "10px", lg: "14px" },
+        fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] }
+      } }
     };
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    .cursor::after { content: "▍"; animation: blink 1s steps(2) infinite; margin-left: 1px; color: #6366f1; }
-    @keyframes blink { to { visibility: hidden; } }
-    .prose-answer p + p, .prose-answer ul, .prose-answer ol { margin-top: .6rem; }
-    .prose-answer ul { list-style: disc; padding-left: 1.25rem; }
-    .prose-answer ol { list-style: decimal; padding-left: 1.25rem; }
-    .prose-answer code { font-size: .85em; padding: .1rem .3rem; border-radius: .25rem; background: rgba(99,102,241,.12); }
-    mark { background: rgba(250, 204, 21, .45); color: inherit; border-radius: .15rem; padding: 0 .1rem; }
-    .scrollbar-thin::-webkit-scrollbar { width: 8px; }
-    .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(120,120,140,.35); border-radius: 8px; }
-  </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
 </head>
-<body class="h-full bg-slate-50 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-100 font-sans">
-<div class="flex h-full flex-col md:flex-row">
+<body>
+  <svg width="0" height="0" class="sr-only" aria-hidden="true">
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0-4 4m4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 7l2 2M14 9l2 2"/></symbol>
+  </svg>
 
-  <!-- ============ Sidebar ============ -->
-  <aside id="sidebar" class="flex w-full shrink-0 flex-col border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 md:h-full md:w-80 md:border-b-0 md:border-r">
-    <div class="flex items-center justify-between gap-3 px-5 py-4">
-      <div class="flex items-center gap-3">
-        <div class="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-white shadow-sm">
-          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h8"/></svg>
-        </div>
+  <!-- ============ Sign-in screen ============ -->
+  <main id="auth-view" class="c-auth" data-js="auth-view" hidden>
+    <div class="c-auth__card">
+      <div class="c-brand">
+        <span class="c-brand__mark"><svg class="c-icon"><use href="#i-doc"/></svg></span>
         <div>
-          <h1 class="text-base font-semibold leading-tight">rag-chat</h1>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Chat with your docs</p>
+          <p class="c-heading">rag-chat</p>
+          <p class="c-meta">Chat with your docs</p>
         </div>
       </div>
-      <button id="toggleSidebar" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden" aria-label="Toggle documents panel" aria-expanded="false">
-        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <div class="flex flex-col gap-3">
+        <h1 class="c-title">Ask your PDFs anything</h1>
+        <p class="c-text u-muted">Answers come only from your documents, with a link to the exact page. If the answer isn't there, it says so instead of guessing.</p>
+        <ol class="c-steps" aria-label="How it works">
+          <li><span class="c-steps__num">1</span>Upload</li>
+          <li><span class="c-steps__num">2</span>Ask</li>
+          <li><span class="c-steps__num">3</span>Check sources</li>
+        </ol>
+      </div>
+      <button class="c-btn c-btn--primary c-btn--block" data-js="guest">
+        <span class="c-btn__label">Try it with a sample PDF</span>
       </button>
-    </div>
-
-    <div id="sidebarBody" class="hidden min-h-0 flex-1 flex-col md:flex">
-      <!-- Dropzone -->
-      <div class="px-5">
-        <label id="dropzone" for="fileInput" tabindex="0"
-          class="group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 px-4 py-6 text-center transition hover:border-indigo-400 hover:bg-indigo-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:hover:border-indigo-500 dark:hover:bg-indigo-500/5">
-          <svg viewBox="0 0 24 24" class="h-8 w-8 text-slate-400 transition group-hover:text-indigo-500" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-          <span class="text-sm font-medium">Drop PDFs here or <span class="text-indigo-600 dark:text-indigo-400">browse</span></span>
-          <span class="text-xs text-slate-500 dark:text-slate-400">PDF with selectable text · max 20 MB</span>
-          <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple class="sr-only" />
-        </label>
-        <ul id="uploads" class="mt-3 space-y-2"></ul>
-      </div>
-
-      <!-- Documents -->
-      <div class="mt-5 flex items-center justify-between px-5">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Documents</h2>
-        <span id="docCount" class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">0</span>
-      </div>
-      <p id="scopeHint" class="px-5 pt-1 text-xs text-slate-500 dark:text-slate-400">Questions search all documents. Tick to narrow the scope.</p>
-      <ul id="docList" class="scrollbar-thin mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"></ul>
-
-      <!-- Footer -->
-      <div class="border-t border-slate-200 px-5 py-3 dark:border-slate-800">
-        <label class="flex cursor-pointer items-center justify-between gap-3 text-sm">
-          <span>
-            <span class="font-medium">Debug scores</span>
-            <span class="block text-xs text-slate-500 dark:text-slate-400">Show vector, BM25, RRF and rerank scores</span>
-          </span>
-          <input id="debugToggle" type="checkbox" class="peer sr-only" />
-          <span class="relative h-6 w-11 shrink-0 rounded-full bg-slate-300 transition after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:bg-indigo-600 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500 dark:bg-slate-700"></span>
-        </label>
-        <div class="mt-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
-          <p id="keyStatus" class="flex min-w-0 items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-            <span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-slate-400"></span><span class="truncate">Checking Claude…</span>
-          </p>
-          <button id="openKey" type="button" class="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-indigo-100 hover:text-indigo-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-indigo-500/20 dark:hover:text-indigo-200">
-            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 7l2 2M14 9l2 2"/></svg>
-            API key
-          </button>
+      <p class="c-meta" style="margin-top: calc(-1 * var(--space-4))">No sign-up. Guest data is deleted after 24 hours.</p>
+      <div class="c-divider">or use an account</div>
+      <div class="c-card flex flex-col gap-4">
+        <div class="c-tabs" role="tablist" aria-label="Account">
+          <button class="c-tabs__tab" role="tab" id="tab-login" aria-selected="true" aria-controls="auth-form" data-js="auth-tab" data-mode="login">Sign in</button>
+          <button class="c-tabs__tab" role="tab" id="tab-register" aria-selected="false" aria-controls="auth-form" data-js="auth-tab" data-mode="register">Create account</button>
         </div>
+        <form id="auth-form" class="flex flex-col gap-4" role="tabpanel" aria-labelledby="tab-login" novalidate data-js="auth-form">
+          <div class="c-field">
+            <label class="c-label" for="auth-email">Email</label>
+            <input class="c-input" id="auth-email" data-js="auth-email" name="email" type="email" autocomplete="email" required aria-describedby="auth-email-error" />
+            <p class="c-error-text" id="auth-email-error" hidden></p>
+          </div>
+          <div class="c-field">
+            <label class="c-label" for="auth-password">Password</label>
+            <input class="c-input" id="auth-password" data-js="auth-password" name="password" type="password" autocomplete="current-password" required aria-describedby="auth-password-help auth-password-error" />
+            <div class="c-strength" data-js="strength" data-level="0" hidden aria-hidden="true"><span class="c-strength__bar"></span><span class="c-strength__bar"></span><span class="c-strength__bar"></span></div>
+            <p class="c-help" id="auth-password-help" data-js="password-help">At least 8 characters.</p>
+            <p class="c-error-text" id="auth-password-error" hidden></p>
+          </div>
+          <p class="c-error-text" data-js="auth-error" role="alert" hidden></p>
+          <button class="c-btn c-btn--secondary c-btn--block" type="submit" data-js="auth-submit"><span class="c-btn__label">Sign in</span></button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ App ============ -->
+  <div id="app-view" class="c-shell" data-js="app-view" hidden>
+    <aside class="c-sidebar" id="sidebar" aria-label="Documents and conversations" data-js="sidebar">
+      <div class="flex items-center justify-between gap-2 px-4 py-3">
+        <div class="c-brand">
+          <span class="c-brand__mark"><svg class="c-icon"><use href="#i-doc"/></svg></span>
+          <div><p class="c-heading">rag-chat</p><p class="c-meta">Chat with your docs</p></div>
+        </div>
+        <button class="c-btn c-btn--ghost c-btn--icon md:hidden" data-js="close-sidebar" aria-label="Close panel"><svg class="c-icon"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="px-4">
+        <div class="c-tabs" role="tablist" aria-label="Sidebar">
+          <button class="c-tabs__tab" role="tab" id="stab-docs" aria-selected="true" aria-controls="panel-docs" data-js="side-tab" data-panel="docs">Documents</button>
+          <button class="c-tabs__tab" role="tab" id="stab-convs" aria-selected="false" aria-controls="panel-convs" data-js="side-tab" data-panel="convs">Conversations</button>
+        </div>
+      </div>
+
+      <section id="panel-docs" role="tabpanel" aria-labelledby="stab-docs" class="flex min-h-0 flex-1 flex-col gap-4 pt-4">
+        <div class="px-4">
+          <label class="c-dropzone" data-js="dropzone">
+            <svg class="c-icon c-icon--lg c-dropzone__icon"><use href="#i-upload"/></svg>
+            <span>Drop a PDF here or <span class="c-dropzone__link">choose a file</span></span>
+            <span class="c-meta">PDF, up to 20 MB</span>
+            <input type="file" class="sr-only" accept="application/pdf,.pdf" multiple data-js="file-input" />
+          </label>
+        </div>
+        <div class="flex items-center justify-between px-4">
+          <h2 class="c-section-label">Your documents</h2>
+          <span class="c-badge c-badge--neutral" data-js="doc-count">0</span>
+        </div>
+        <ul class="u-scroll flex min-h-0 flex-1 flex-col gap-1 px-2 pb-4" style="list-style:none;margin:0" data-js="doc-list" aria-label="Documents"></ul>
+      </section>
+
+      <section id="panel-convs" role="tabpanel" aria-labelledby="stab-convs" class="flex min-h-0 flex-1 flex-col gap-3 pt-4" hidden>
+        <div class="px-4"><button class="c-btn c-btn--secondary c-btn--block" data-js="new-chat"><svg class="c-icon"><use href="#i-plus"/></svg>New conversation</button></div>
+        <ul class="u-scroll flex min-h-0 flex-1 flex-col gap-1 px-2 pb-4" style="list-style:none;margin:0" data-js="conv-list" aria-label="Conversations"></ul>
+      </section>
+
+      <div class="flex items-center justify-between gap-2 px-4 py-3" style="border-top: var(--border-width) solid var(--color-border)">
+        <div class="flex min-w-0 items-center gap-2">
+          <span class="c-dot" data-js="llm-dot" aria-hidden="true"></span>
+          <span class="c-meta u-truncate" data-js="llm-status">Checking Claude…</span>
+        </div>
+        <button class="c-btn c-btn--ghost c-btn--sm" data-js="open-settings"><svg class="c-icon"><use href="#i-gear"/></svg>Settings</button>
+      </div>
+    </aside>
+    <div class="c-scrim md:hidden" data-js="sidebar-scrim" hidden></div>
+
+    <main class="c-main">
+      <header class="c-topbar">
+        <button class="c-btn c-btn--secondary c-btn--sm md:hidden" data-js="open-sidebar" aria-controls="sidebar" aria-expanded="false"><svg class="c-icon"><use href="#i-menu"/></svg>Documents</button>
+        <h1 class="c-text u-truncate flex-1" style="font-weight: var(--weight-semibold)" data-js="conv-title">New conversation</h1>
+        <button class="c-btn c-btn--ghost c-btn--sm" data-js="new-chat-top" aria-label="New conversation"><svg class="c-icon"><use href="#i-plus"/></svg><span class="hidden sm:inline">New</span></button>
+        <div class="c-menu">
+          <button class="c-btn c-btn--ghost c-btn--icon c-btn--sm" data-js="shortcuts-btn" aria-expanded="false" aria-controls="shortcuts" aria-label="Keyboard shortcuts"><svg class="c-icon"><use href="#i-help"/></svg></button>
+          <div class="c-popover" id="shortcuts" role="dialog" aria-label="Keyboard shortcuts" hidden>
+            <p class="c-label">Keyboard shortcuts</p>
+            <dl>
+              <dt><kbd class="c-kbd">Enter</kbd></dt><dd>Send</dd>
+              <dt><kbd class="c-kbd">Shift</kbd>+<kbd class="c-kbd">Enter</kbd></dt><dd>New line</dd>
+              <dt><kbd class="c-kbd">/</kbd></dt><dd>Focus the question box</dd>
+              <dt><kbd class="c-kbd">Esc</kbd></dt><dd>Close panels</dd>
+              <dt><kbd class="c-kbd">?</kbd></dt><dd>Show this list</dd>
+            </dl>
+          </div>
+        </div>
+      </header>
+
+      <div class="u-scroll flex-1" data-js="scroller">
+        <div class="mx-auto w-full px-4 py-6 md:px-6" style="max-width: calc(var(--size-measure) + var(--space-12))">
+          <div data-js="empty"></div>
+          <div class="c-thread" data-js="thread" aria-live="polite" aria-relevant="additions text"></div>
+        </div>
+      </div>
+
+      <form class="c-composer-bar" data-js="composer" novalidate>
+        <div class="c-composer mx-auto w-full" style="max-width: calc(var(--size-measure) + var(--space-12))">
+          <div class="c-notice" data-js="key-notice" hidden>
+            <span class="flex items-center gap-2"><svg class="c-icon"><use href="#i-key"/></svg><span data-js="key-notice-text">Add your Anthropic API key to get written answers.</span></span>
+            <button type="button" class="c-btn c-btn--secondary c-btn--sm" data-js="key-notice-btn">Add API key</button>
+          </div>
+          <p class="c-scope" data-js="scope" id="scope-line"><svg class="c-icon"><use href="#i-search"/></svg><span data-js="scope-text">Upload a PDF to start</span></p>
+          <div class="c-composer__row">
+            <label for="question" class="sr-only">Ask a question about your documents</label>
+            <textarea id="question" class="c-textarea" rows="1" maxlength="2000" placeholder="Ask a question…" aria-describedby="scope-line" data-js="question"></textarea>
+            <button class="c-btn c-btn--primary" type="submit" data-js="send"><svg class="c-icon" data-js="send-icon"><use href="#i-send"/></svg><span class="c-btn__label" data-js="send-label">Ask</span></button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <!-- ============ Source drawer / settings panel (drawer component) ============ -->
+  <div class="c-scrim" data-js="drawer-scrim" hidden></div>
+  <aside class="c-drawer" role="dialog" aria-modal="true" aria-labelledby="source-title" data-js="source-drawer" hidden>
+    <span class="c-drawer__grab" aria-hidden="true"></span>
+    <div class="c-drawer__head">
+      <div class="min-w-0">
+        <p class="c-meta" data-js="source-n"></p>
+        <h2 class="c-heading u-truncate" id="source-title" data-js="source-file"></h2>
+        <p class="c-help" data-js="source-pages"></p>
+      </div>
+      <button class="c-btn c-btn--ghost c-btn--icon" data-js="close-drawer" aria-label="Close source"><svg class="c-icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="c-drawer__body u-scroll">
+      <div class="flex flex-col gap-2">
+        <p class="c-section-label">Passage used for the answer</p>
+        <blockquote class="c-passage" data-js="source-text"></blockquote>
+      </div>
+      <div class="flex flex-col gap-2" data-js="source-scores" hidden>
+        <p class="c-section-label">Retrieval scores</p>
+        <dl class="c-scores" data-js="source-scores-list"></dl>
       </div>
     </div>
   </aside>
 
-  <!-- ============ Chat ============ -->
-  <main class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div id="messages" class="scrollbar-thin flex-1 overflow-y-auto">
-      <div id="emptyState" class="mx-auto flex h-full max-w-2xl flex-col items-center justify-center px-6 py-12 text-center">
-        <div class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
-          <svg viewBox="0 0 24 24" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z"/><path d="M8.5 10.5h7M8.5 13.5h4"/></svg>
+  <aside class="c-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-js="settings-drawer" hidden>
+    <span class="c-drawer__grab" aria-hidden="true"></span>
+    <div class="c-drawer__head">
+      <h2 class="c-heading" id="settings-title">Settings</h2>
+      <button class="c-btn c-btn--ghost c-btn--icon" data-js="close-drawer" aria-label="Close settings"><svg class="c-icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="c-drawer__body u-scroll">
+      <section class="flex flex-col gap-3" aria-labelledby="set-key-title">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="c-label" id="set-key-title">Claude API key</h3>
+          <span class="c-badge c-badge--neutral" data-js="key-badge">Not set</span>
         </div>
-        <h2 class="text-xl font-semibold">Ask anything about your documents</h2>
-        <p class="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">Answers come only from your PDFs, with clickable citations to the exact page. If the answer isn't in them, rag-chat says so instead of guessing.</p>
-        <div id="suggestions" class="mt-6 flex flex-wrap justify-center gap-2"></div>
-      </div>
-      <div id="thread" class="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6"></div>
-    </div>
-
-    <form id="askForm" class="border-t border-slate-200 bg-white/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 sm:px-6">
-      <div id="keyBanner" class="mx-auto mb-3 hidden max-w-3xl items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-        <span id="keyBannerText">Add your Anthropic API key to get answers.</span>
-        <button id="keyBannerBtn" type="button" class="shrink-0 rounded-lg bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-500">Add API key</button>
-      </div>
-      <div class="mx-auto flex max-w-3xl items-end gap-2">
-        <textarea id="question" rows="1" maxlength="2000" placeholder="Ask a question about your documents…"
-          class="max-h-40 min-h-[44px] flex-1 resize-none rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950"></textarea>
-        <button id="sendBtn" type="submit" class="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
-          <span id="sendLabel">Ask</span>
-          <svg id="sendIcon" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </button>
-      </div>
-      <p class="mx-auto mt-1.5 max-w-3xl text-[11px] text-slate-400">Enter to send · Shift+Enter for a new line</p>
-    </form>
-  </main>
-</div>
-
-<!-- ============ Source drawer ============ -->
-<div id="drawerBackdrop" class="fixed inset-0 z-40 hidden bg-slate-900/40 backdrop-blur-[1px]"></div>
-<aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"
-  class="fixed inset-y-0 right-0 z-50 flex w-full max-w-md translate-x-full flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform duration-200 dark:border-slate-800 dark:bg-slate-900">
-  <div class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-    <div class="min-w-0">
-      <p id="drawerN" class="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400"></p>
-      <h3 id="drawerTitle" class="truncate text-base font-semibold"></h3>
-      <p id="drawerPages" class="text-sm text-slate-500 dark:text-slate-400"></p>
-    </div>
-    <button id="drawerClose" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close source">
-      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-    </button>
-  </div>
-  <div class="scrollbar-thin flex-1 overflow-y-auto px-5 py-4">
-    <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Source passage</p>
-    <blockquote id="drawerSnippet" class="whitespace-pre-wrap rounded-xl border-l-4 border-indigo-500 bg-slate-50 p-4 text-sm leading-relaxed dark:bg-slate-800/60"></blockquote>
-    <div id="drawerScores" class="mt-5 hidden"></div>
-  </div>
-</aside>
-
-<!-- ============ API key screen ============ -->
-<div id="keyModal" class="fixed inset-0 z-[55] hidden items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="keyTitle">
-  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <h3 id="keyTitle" class="text-lg font-semibold">Connect Claude</h3>
-        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">rag-chat uses your own Anthropic API key to write answers. You can create one in the
-          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" class="font-medium text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400">Anthropic Console</a>.</p>
-      </div>
-      <button id="keyClose" type="button" class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close">
-        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
-      </button>
-    </div>
-
-    <form id="keyForm" class="mt-5" autocomplete="off">
-      <label for="keyInput" class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Anthropic API key</label>
-      <div class="mt-1.5 flex gap-2">
-        <input id="keyInput" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…"
-          class="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:border-slate-700 dark:bg-slate-950" />
-        <button id="keyReveal" type="button" class="shrink-0 rounded-xl border border-slate-300 px-3 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" aria-label="Show key">Show</button>
-      </div>
-      <label class="mt-3 flex cursor-pointer items-center gap-2 text-sm">
-        <input id="keyRemember" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800" />
-        Remember on this device
-      </label>
-
-      <div id="keyResult" class="mt-4 hidden rounded-xl px-3 py-2.5 text-sm" role="status" aria-live="polite"></div>
-
-      <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
-        <button id="keyRemove" type="button" class="rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:text-rose-400 dark:hover:bg-rose-500/10">Remove key</button>
-        <div class="flex gap-2">
-          <button id="keyTest" type="button" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Test</button>
-          <button id="keySave" type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">Save &amp; test</button>
+        <p class="c-help">rag-chat writes answers with your own Anthropic key. Create one in the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a>.</p>
+        <form class="flex flex-col gap-3" data-js="key-form" novalidate autocomplete="off">
+          <div class="c-field">
+            <label class="c-label" for="key-input">API key</label>
+            <div class="flex gap-2">
+              <input class="c-input c-input--mono" id="key-input" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-describedby="key-help key-error" data-js="key-input" />
+              <button type="button" class="c-btn c-btn--secondary" data-js="key-reveal" aria-pressed="false">Show</button>
+            </div>
+            <p class="c-help" id="key-help">Kept only in this browser and sent with each question. The server never stores or logs it.</p>
+            <p class="c-error-text" id="key-error" data-js="key-error" hidden></p>
+          </div>
+          <label class="c-check"><input type="checkbox" data-js="key-remember" />Remember on this device</label>
+          <p class="c-help" data-js="key-result" role="status" aria-live="polite"></p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="submit" class="c-btn c-btn--primary" data-js="key-save"><span class="c-btn__label">Save and test</span></button>
+            <button type="button" class="c-btn c-btn--ghost" data-js="key-remove">Remove key</button>
+          </div>
+        </form>
+      </section>
+      <section class="flex flex-col gap-3" aria-labelledby="set-theme-title">
+        <h3 class="c-label" id="set-theme-title">Appearance</h3>
+        <div class="c-segmented" role="group" aria-labelledby="set-theme-title" data-js="theme-group">
+          <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+          <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
         </div>
+      </section>
+      <section class="flex items-center justify-between gap-4">
+        <div>
+          <h3 class="c-label" id="set-debug-title">Show retrieval scores</h3>
+          <p class="c-help">Vector, keyword (BM25), fusion and rerank scores for every source.</p>
+        </div>
+        <span class="c-switch"><input type="checkbox" role="switch" aria-labelledby="set-debug-title" data-js="debug-toggle" /><span class="c-switch__track"></span></span>
+      </section>
+      <section class="flex flex-col gap-3" aria-labelledby="set-account-title">
+        <h3 class="c-label" id="set-account-title">Account</h3>
+        <p class="c-help" data-js="account-line"></p>
+        <div><button type="button" class="c-btn c-btn--secondary" data-js="sign-out">Sign out</button></div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ============ Confirm modal (destructive actions only) ============ -->
+  <div class="c-modal-wrap" data-js="modal" hidden>
+    <div class="c-scrim" data-state="open" data-js="modal-scrim"></div>
+    <div class="c-modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-body">
+      <h2 class="c-heading" id="modal-title" data-js="modal-title"></h2>
+      <p class="c-text u-muted" id="modal-body" data-js="modal-body"></p>
+      <div class="c-modal__actions">
+        <button class="c-btn c-btn--secondary" data-js="modal-cancel">Cancel</button>
+        <button class="c-btn c-btn--danger" data-js="modal-confirm">Delete</button>
       </div>
-    </form>
-
-    <p class="mt-5 border-t border-slate-100 pt-4 text-xs leading-relaxed text-slate-500 dark:border-slate-800 dark:text-slate-400">
-      🔒 Your key is kept only in this browser (for this tab, or on this device if you tick “Remember”). It is sent to this rag-chat server with each question, which passes it to Anthropic. The server never saves or logs it. Testing uses Anthropic's free Models API, so it costs nothing.
-    </p>
+    </div>
   </div>
-</div>
 
-<div id="toasts" class="pointer-events-none fixed bottom-24 left-1/2 z-[60] flex w-[min(92vw,28rem)] -translate-x-1/2 flex-col gap-2"></div>
+  <div class="c-toasts" data-js="toasts" aria-live="polite"></div>
 
-<script src="/static/app.js"></script>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

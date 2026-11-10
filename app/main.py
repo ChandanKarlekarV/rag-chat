@@ -49,8 +49,9 @@ def create_app(container: Container | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
-        if container is None and settings.is_prod and settings.secret_key == DEV_SECRET:
-            raise RuntimeError("Set SECRET_KEY in the environment before running with APP_ENV=prod.")
+        weak = settings.secret_key == DEV_SECRET or "change-me" in settings.secret_key or len(settings.secret_key) < 32
+        if container is None and settings.is_prod and weak:
+            raise RuntimeError("Set a random SECRET_KEY of 32+ characters before running with APP_ENV=prod.")
         app.state.container = container or build_container(settings)
         app.state.container.auth.cleanup_guests()
         log.info("rag-chat ready")

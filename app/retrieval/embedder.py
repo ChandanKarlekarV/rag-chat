@@ -20,9 +20,7 @@ class Embedder:
         """Embed passages (no prefix) in batches."""
         if not texts:
             return []
-        vecs = self._model.encode(
-            texts, batch_size=self.batch_size, normalize_embeddings=True, show_progress_bar=False
-        )
+        vecs = self._model.encode(texts, batch_size=self.batch_size, normalize_embeddings=True, show_progress_bar=False)
         return vecs.tolist()
 
     def embed_query(self, text: str) -> list[float]:

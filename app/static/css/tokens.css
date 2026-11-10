@@ -1,0 +1,125 @@
+/* ==========================================================================
+   rag-chat design tokens — the ONLY place raw color values may appear.
+   Light is the default; dark is applied via [data-theme="dark"], which the
+   inline boot script sets from the saved choice or prefers-color-scheme.
+   scripts/check_contrast.py parses the two blocks below.
+   ========================================================================== */
+
+:root {
+  /* color — light */
+  --color-bg: #FAF8F5;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F2EFEA;
+  --color-border: #E3DED6;
+  --color-border-strong: #C9C2B7;
+  --color-border-input: #8A8478;
+  --color-text: #1F2933;
+  --color-text-muted: #5B6670;
+  --color-text-inverse: #FFFFFF;
+  --color-primary: #0F766E;
+  --color-primary-hover: #0B5F58;
+  --color-primary-subtle: #E3F2EF;
+  --color-accent: #A14A07;
+  --color-accent-subtle: #FBEFD9;
+  --color-success: #286B44;
+  --color-success-subtle: #E4F3EA;
+  --color-danger: #B42318;
+  --color-danger-subtle: #FCE8E6;
+  --color-focus: #0F766E;
+  --color-scrim: rgba(31, 41, 51, 0.40);
+  --shadow-sm: 0 1px 2px rgba(31, 41, 51, 0.06);
+  --shadow-md: 0 4px 12px rgba(31, 41, 51, 0.08);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  /* color — dark */
+  --color-bg: #14181C;
+  --color-surface: #1B2127;
+  --color-surface-muted: #222A31;
+  --color-border: #2E3841;
+  --color-border-strong: #44515C;
+  --color-border-input: #6E7C88;
+  --color-text: #E8ECEF;
+  --color-text-muted: #A3AEB8;
+  --color-text-inverse: #0B1F1C;
+  --color-primary: #2DD4BF;
+  --color-primary-hover: #5EE6D3;
+  --color-primary-subtle: #16332F;
+  --color-accent: #F0B35A;
+  --color-accent-subtle: #3A2C14;
+  --color-success: #5CC48A;
+  --color-success-subtle: #17311F;
+  --color-danger: #F28B82;
+  --color-danger-subtle: #3B1D1A;
+  --color-focus: #2DD4BF;
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40);
+  color-scheme: dark;
+}
+
+:root {
+  /* typography */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --text-xs: 12px;   --leading-xs: 16px;
+  --text-sm: 14px;   --leading-sm: 20px;
+  --text-base: 16px; --leading-base: 24px;
+  --text-lg: 18px;   --leading-lg: 28px;
+  --text-xl: 24px;   --leading-xl: 32px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* spacing (4px base — use only these steps) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+  --border-width: 1px;
+  --border-width-dashed: 1.5px;
+  --border-width-thick: 2px;
+  --underline-offset: 2px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* sizes */
+  --size-control-md: 40px;
+  --size-control-sm: 32px;
+  --size-tap-touch: 44px;
+  --size-icon-sm: 12px;
+  --size-icon: 16px;
+  --size-icon-lg: 24px;
+  --size-textarea-max: 160px;
+  --size-menu: 160px;
+  --size-popover: 260px;
+  --size-modal: 420px;
+  --size-auth: 440px;
+  --size-empty: 480px;
+  --size-sidebar: 320px;
+  --size-drawer: 440px;
+  --size-measure: 72ch;
+
+  /* motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(.2, .0, .0, 1);
+
+  /* layers */
+  --z-sheet: 30;
+  --z-drawer: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+}

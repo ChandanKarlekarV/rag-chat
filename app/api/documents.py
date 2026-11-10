@@ -31,9 +31,26 @@ def list_documents(user: User = Depends(get_current_user), c: Container = Depend
 
 
 @router.get("/{doc_id}/status", response_model=DocumentStatus)
-def status(doc_id: str, user: User = Depends(get_current_user), c: Container = Depends(get_container)) -> DocumentStatus:
+def status(
+    doc_id: str, user: User = Depends(get_current_user), c: Container = Depends(get_container)
+) -> DocumentStatus:
     """Ingest stage and progress for one document."""
     return c.ingest.status(user.id, doc_id)
+
+
+@router.post(
+    "/{doc_id}/retry", response_model=DocumentOut, status_code=202, dependencies=[Depends(require_fetch_header)]
+)
+def retry(
+    doc_id: str,
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    c: Container = Depends(get_container),
+) -> Document:
+    """Re-run ingest for a document that failed."""
+    doc = c.ingest.retry(user.id, doc_id)
+    background.add_task(c.ingest.process, doc.id)
+    return doc
 
 
 @router.delete("/{doc_id}", status_code=204, dependencies=[Depends(require_fetch_header)])

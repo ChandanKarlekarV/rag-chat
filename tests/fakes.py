@@ -32,8 +32,7 @@ class FakeReranker:
     def rerank(self, question: str, candidates: list[RetrievedChunk], top_k: int) -> list[RetrievedChunk]:
         q = set(tokenize(question))
         scored = [
-            c.model_copy(update={"rerank_score": float(len(q & set(tokenize(c.chunk.text)))) - 1.0})
-            for c in candidates
+            c.model_copy(update={"rerank_score": float(len(q & set(tokenize(c.chunk.text)))) - 1.0}) for c in candidates
         ]
         scored.sort(key=lambda c: c.rerank_score, reverse=True)
         return scored[:top_k]

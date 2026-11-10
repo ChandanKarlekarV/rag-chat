@@ -1,7 +1,7 @@
-﻿"""SQLAlchemy 2.0 ORM models (typed `Mapped[]` style)."""
+"""SQLAlchemy 2.0 ORM models (typed `Mapped[]` style)."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -14,7 +14,7 @@ def new_id() -> str:
 
 def utcnow() -> datetime:
     """Timezone-aware current time."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UTCDateTime(TypeDecorator[datetime]):
@@ -25,11 +25,11 @@ class UTCDateTime(TypeDecorator[datetime]):
 
     def process_bind_param(self, value: datetime | None, dialect: object) -> datetime | None:
         if value is not None and value.tzinfo is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(UTC).replace(tzinfo=None)
         return value
 
     def process_result_value(self, value: datetime | None, dialect: object) -> datetime | None:
-        return value.replace(tzinfo=timezone.utc) if value is not None else None
+        return value.replace(tzinfo=UTC) if value is not None else None
 
 
 class Base(DeclarativeBase):
@@ -48,9 +48,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
     documents: Mapped[list["Document"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    conversations: Mapped[list["Conversation"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
+    conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Document(Base):

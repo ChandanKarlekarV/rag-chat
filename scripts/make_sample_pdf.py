@@ -224,9 +224,7 @@ Operating temperature: -30 to 50 degrees C. Weight: 6.8 kg including cable. Dime
 ]
 
 
-def build(
-    output: Path, title: str = TITLE, pages: list[tuple[str, str]] = PAGES, footer: str = "Rev. C"
-) -> Path:
+def build(output: Path, title: str = TITLE, pages: list[tuple[str, str]] = PAGES, footer: str = "Rev. C") -> Path:
     """Render a manual to `output` and return the path."""
     doc = pymupdf.open()
     total = len(pages)
@@ -239,7 +237,9 @@ def build(
         )
         if overflow < 0:
             raise RuntimeError(f"page {n} text does not fit")
-        page.insert_text((50, 815), f"Page {n} of {total} - {footer}", fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4))
+        page.insert_text(
+            (50, 815), f"Page {n} of {total} - {footer}", fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4)
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output)
     return output

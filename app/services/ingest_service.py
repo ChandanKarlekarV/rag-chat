@@ -114,6 +114,20 @@ class IngestService:
             log.exception("ingest failed", extra={"doc_id": doc_id})
             self._fail(doc_id, user_id, "Something went wrong while reading this PDF. Try uploading it again.")
 
+    def retry(self, user_id: str, doc_id: str) -> Document:
+        """Mark a failed document for another ingest attempt. The caller schedules `process`."""
+        with self.db.session() as s:
+            doc = DocumentRepo(s).get(user_id, doc_id)
+            if doc is None:
+                raise NotFound("not_found", "This document no longer exists.")
+            if doc.status != "failed":
+                raise AppError("not_failed", "Only documents that failed can be retried.")
+            if not self._file(doc_id).exists():
+                raise AppError("file_missing", "The original file is gone. Please upload it again.")
+            doc.status, doc.error = "processing", None
+        self._progress[doc_id] = _Progress("queued", 0)
+        return doc
+
     def ingest_now(self, user: User, data: bytes, filename: str) -> Document:
         """Submit and process synchronously (used to preload the guest sample)."""
         doc = self.submit(user, data, filename)
@@ -151,8 +165,13 @@ class IngestService:
             else:
                 stage, pct = (prog.stage, prog.percent) if prog else ("queued", 0)
             return DocumentStatus(
-                id=doc.id, status=doc.status, stage=stage, progress=pct,  # type: ignore[arg-type]
-                error=doc.error, pages=doc.pages, chunks=doc.chunks,
+                id=doc.id,
+                status=doc.status,
+                stage=stage,
+                progress=pct,  # type: ignore[arg-type]
+                error=doc.error,
+                pages=doc.pages,
+                chunks=doc.chunks,
             )
 
     def delete(self, user_id: str, doc_id: str) -> None:

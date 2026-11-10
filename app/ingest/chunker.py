@@ -56,9 +56,7 @@ def _joined_len(sentences: list[_Sentence]) -> int:
     return sum(len(s.text) for s in sentences) + max(len(sentences) - 1, 0)
 
 
-def chunk_pages(
-    pages: list[PageText], doc_id: str, filename: str, size: int = 800, overlap: int = 150
-) -> list[Chunk]:
+def chunk_pages(pages: list[PageText], doc_id: str, filename: str, size: int = 800, overlap: int = 150) -> list[Chunk]:
     """Pack sentences into chunks of at most `size` chars.
 
     Consecutive chunks share whole trailing sentences totalling at most `overlap` chars.
@@ -76,14 +74,14 @@ def chunk_pages(
     windows: list[list[_Sentence]] = []
     current: list[_Sentence] = []
     for sent in sentences:
-        if current and _joined_len(current + [sent]) > size:
+        if current and _joined_len([*current, sent]) > size:
             windows.append(current)
             tail: list[_Sentence] = []
             for prev in reversed(current):
-                if _joined_len([prev] + tail) > overlap:
+                if _joined_len([prev, *tail]) > overlap:
                     break
                 tail.insert(0, prev)
-            if _joined_len(tail + [sent]) > size:
+            if _joined_len([*tail, sent]) > size:
                 tail = []
             current = tail
         current.append(sent)

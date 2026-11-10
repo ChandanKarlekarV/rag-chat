@@ -24,7 +24,7 @@ class Reranker:
     def rerank(self, question: str, candidates: list[RetrievedChunk], top_k: int) -> list[RetrievedChunk]:
         """Attach `rerank_score` to every candidate and return the best `top_k`."""
         scores = self.score(question, [c.chunk.text for c in candidates])
-        scored = [c.model_copy(update={"rerank_score": s}) for c, s in zip(candidates, scores)]
+        scored = [c.model_copy(update={"rerank_score": s}) for c, s in zip(candidates, scores, strict=True)]
         scored.sort(key=lambda c: c.rerank_score, reverse=True)
         return scored[:top_k]
 

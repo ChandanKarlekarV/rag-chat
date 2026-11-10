@@ -1,3 +1,4 @@
+# Direct dependencies. Exact versions of everything (incl. transitive) are in requirements.lock.
 --extra-index-url https://download.pytorch.org/whl/cpu
 fastapi==0.162.2
 uvicorn[standard]==0.54.0
@@ -11,3 +12,6 @@ rank-bm25==0.2.2
 anthropic==2.7.0
 pydantic==2.14.3
 pydantic-settings==2.16.2
+SQLAlchemy==2.1.8
+argon2-cffi==25.1.0
+PyJWT==2.15.1

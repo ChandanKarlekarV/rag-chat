@@ -76,7 +76,7 @@ class VectorStore:
         return [
             (chunk_from_record(cid, doc, meta), 1.0 - float(dist))
             for cid, doc, meta, dist in zip(
-                res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]
+                res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0], strict=True
             )
         ]
 
@@ -87,13 +87,15 @@ class VectorStore:
         res = self._col.get(ids=ids, where={"user_id": user_id}, include=["documents", "metadatas"])
         return {
             cid: chunk_from_record(cid, doc, meta)
-            for cid, doc, meta in zip(res["ids"], res["documents"], res["metadatas"])
+            for cid, doc, meta in zip(res["ids"], res["documents"], res["metadatas"], strict=True)
         }
 
     def user_chunks(self, user_id: str) -> list[Chunk]:
         """All of a user's chunks (used to rebuild their BM25 index)."""
         res = self._col.get(where={"user_id": user_id}, include=["documents", "metadatas"])
-        return [chunk_from_record(c, d, m) for c, d, m in zip(res["ids"], res["documents"], res["metadatas"])]
+        return [
+            chunk_from_record(c, d, m) for c, d, m in zip(res["ids"], res["documents"], res["metadatas"], strict=True)
+        ]
 
     def delete_doc(self, user_id: str, doc_id: str) -> None:
         """Remove one document's chunks."""

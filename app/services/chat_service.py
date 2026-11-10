@@ -37,9 +37,17 @@ def to_citation(n: int, r: RetrievedChunk) -> Citation:
     text = r.chunk.text
     snippet = text if len(text) <= SNIPPET_CHARS else text[:SNIPPET_CHARS].rsplit(" ", 1)[0] + "…"
     return Citation(
-        n=n, doc_id=r.chunk.doc_id, filename=r.chunk.filename, page_start=r.chunk.page_start,
-        page_end=r.chunk.page_end, snippet=snippet, text=text, vector_score=r.vector_score,
-        bm25_score=r.bm25_score, rrf_score=r.rrf_score, rerank_score=r.rerank_score,
+        n=n,
+        doc_id=r.chunk.doc_id,
+        filename=r.chunk.filename,
+        page_start=r.chunk.page_start,
+        page_end=r.chunk.page_end,
+        snippet=snippet,
+        text=text,
+        vector_score=r.vector_score,
+        bm25_score=r.bm25_score,
+        rrf_score=r.rrf_score,
+        rerank_score=r.rerank_score,
     )
 
 
@@ -121,7 +129,9 @@ class ChatService:
         if emitted < len(full):
             yield _event("token", {"text": full[emitted:]})
         answer = full.strip()
-        yield from self._finish(user, question, conversation_id, answer, extract_citations(answer, sources), True, retrieved)
+        yield from self._finish(
+            user, question, conversation_id, answer, extract_citations(answer, sources), True, retrieved
+        )
 
     def _finish(
         self,
@@ -142,7 +152,10 @@ class ChatService:
             repo.add_message(Message(conversation_id=conv.id, role="user", content=question))
             msg = repo.add_message(
                 Message(
-                    conversation_id=conv.id, role="assistant", content=answer, answerable=answerable,
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=answer,
+                    answerable=answerable,
                     citations_json=json.dumps([c.model_dump() for c in citations]),
                 )
             )
@@ -166,7 +179,10 @@ class ChatService:
                 raise NotFound("not_found", "This conversation no longer exists.")
             messages = [
                 MessageOut(
-                    id=m.id, role=m.role, content=m.content, answerable=m.answerable,  # type: ignore[arg-type]
+                    id=m.id,
+                    role=m.role,
+                    content=m.content,
+                    answerable=m.answerable,  # type: ignore[arg-type]
                     citations=[Citation(**c) for c in json.loads(m.citations_json or "[]")],
                     created_at=m.created_at,
                 )

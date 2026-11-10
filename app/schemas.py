@@ -1,7 +1,7 @@
 """Pydantic v2 models for the pipeline and the HTTP API."""
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,10 +32,10 @@ class RetrievedChunk(BaseModel):
     """A chunk plus every score it collected on its way through the pipeline."""
 
     chunk: Chunk
-    vector_score: Optional[float] = None
-    bm25_score: Optional[float] = None
-    rrf_score: Optional[float] = None
-    rerank_score: Optional[float] = None
+    vector_score: float | None = None
+    bm25_score: float | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
 
 
 class Citation(BaseModel):
@@ -48,10 +48,10 @@ class Citation(BaseModel):
     page_end: int
     snippet: str  # first ~300 chars, for compact previews
     text: str  # full chunk text, shown in the source drawer
-    vector_score: Optional[float] = None
-    bm25_score: Optional[float] = None
-    rrf_score: Optional[float] = None
-    rerank_score: Optional[float] = None
+    vector_score: float | None = None
+    bm25_score: float | None = None
+    rrf_score: float | None = None
+    rerank_score: float | None = None
 
 
 # ---------- auth ----------
@@ -90,7 +90,7 @@ class DocumentOut(BaseModel):
     pages: int
     chunks: int
     status: Status
-    error: Optional[str] = None
+    error: str | None = None
     created_at: datetime
 
 
@@ -101,7 +101,7 @@ class DocumentStatus(BaseModel):
     status: Status
     stage: Stage
     progress: int = Field(ge=0, le=100)
-    error: Optional[str] = None
+    error: str | None = None
     pages: int = 0
     chunks: int = 0
 
@@ -113,8 +113,8 @@ class AskRequest(BaseModel):
     """Body of `POST /chat/ask`."""
 
     question: str = Field(min_length=1, max_length=2000)
-    conversation_id: Optional[str] = None
-    doc_ids: Optional[list[str]] = None
+    conversation_id: str | None = None
+    doc_ids: list[str] | None = None
 
 
 class MessageOut(BaseModel):
@@ -123,7 +123,7 @@ class MessageOut(BaseModel):
     id: str
     role: Literal["user", "assistant"]
     content: str
-    answerable: Optional[bool] = None
+    answerable: bool | None = None
     citations: list[Citation] = []
     created_at: datetime
 

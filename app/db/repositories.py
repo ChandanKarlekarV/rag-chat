@@ -93,9 +93,7 @@ class ConversationRepo:
 
     def get(self, user_id: str, conv_id: str) -> Conversation | None:
         """The conversation if it exists *and* belongs to the user."""
-        return self.s.scalar(
-            select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user_id)
-        )
+        return self.s.scalar(select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user_id))
 
     def add(self, conv: Conversation) -> Conversation:
         """Insert a conversation."""

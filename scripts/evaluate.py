@@ -21,13 +21,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.config import Settings  # noqa: E402
-from app.db.models import User  # noqa: E402
-from app.db.repositories import UserRepo  # noqa: E402
-from app.services.container import build_container  # noqa: E402
-from app.services.retrieval_service import passes_gate  # noqa: E402
-from app.retrieval.hybrid import Mode  # noqa: E402
-from app.schemas import RetrievedChunk  # noqa: E402
+from app.config import Settings
+from app.db.models import User
+from app.db.repositories import UserRepo
+from app.retrieval.hybrid import Mode
+from app.schemas import RetrievedChunk
+from app.services.container import build_container
+from app.services.retrieval_service import passes_gate
 
 CONFIGS: list[tuple[str, Mode]] = [("Vector only", "vector"), ("Hybrid (RRF)", "hybrid"), ("Hybrid + Rerank", "rerank")]
 
@@ -87,15 +87,15 @@ def main() -> None:
             ms = (time.perf_counter() - start) * 1000 / len(questions)
             fallback = "n/a"
             if mode == "rerank":
-                correct = sum(
-                    passes_gate(res, settings.min_rerank_score) == q["answerable"] for q, res in rerank_runs
-                )
+                correct = sum(passes_gate(res, settings.min_rerank_score) == q["answerable"] for q, res in rerank_runs)
                 fallback = f"{correct / len(questions):.2f}"
             n = len(answerable)
             rows.append((label, hits1 / n, hits / n, rr / n, fallback, ms))
 
-    print(f"Corpus: {len(pdfs)} PDFs, {total_chunks} chunks. Eval set: {len(answerable)} answerable + "
-          f"{len(questions) - len(answerable)} unanswerable questions. MIN_RERANK_SCORE={settings.min_rerank_score}\n")
+    print(
+        f"Corpus: {len(pdfs)} PDFs, {total_chunks} chunks. Eval set: {len(answerable)} answerable + "
+        f"{len(questions) - len(answerable)} unanswerable questions. MIN_RERANK_SCORE={settings.min_rerank_score}\n"
+    )
     print("| Config | Hit@1 | Hit@5 | MRR | Fallback accuracy | Latency / query (CPU) |")
     print("|---|---|---|---|---|---|")
     for label, hit1, hit, mrr, fb, ms in rows:

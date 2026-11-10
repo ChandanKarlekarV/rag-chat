@@ -13,8 +13,44 @@ from app.schemas import Chunk
 _WORD = re.compile(r"[a-z0-9]+")
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 STOPWORDS = frozenset(
-    "a an and are as at be by for from has have in is it its of on or that the this to was were "
-    "what when where which who why how with does do did".split()
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "how",
+        "with",
+        "does",
+        "do",
+        "did",
+    ]
 )
 
 
@@ -82,9 +118,7 @@ class BM25Store:
             self._cache.pop(user_id, None)
         self._path(user_id).unlink(missing_ok=True)
 
-    def search(
-        self, user_id: str, query: str, k: int, doc_ids: list[str] | None = None
-    ) -> list[tuple[str, float]]:
+    def search(self, user_id: str, query: str, k: int, doc_ids: list[str] | None = None) -> list[tuple[str, float]]:
         """Up to `k` (chunk_id, score) pairs from the user's own index, best first."""
         terms = tokenize(query)
         idx = self._index(user_id)
@@ -95,7 +129,7 @@ class BM25Store:
         scores = idx.bm25.get_scores(terms)
         hits = [
             (cid, float(s))
-            for cid, did, vocab, s in zip(idx.chunk_ids, idx.doc_ids, idx.vocab, scores)
+            for cid, did, vocab, s in zip(idx.chunk_ids, idx.doc_ids, idx.vocab, scores, strict=True)
             if wanted & vocab and (allowed is None or did in allowed)
         ]
         hits.sort(key=lambda h: h[1], reverse=True)
