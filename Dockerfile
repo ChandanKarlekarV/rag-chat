@@ -19,11 +19,12 @@ RUN pip install -r requirements.lock
 # embeddings, the reranker, and the local answer model (used when no API key is set).
 ARG EMBED_MODEL=BAAI/bge-small-en-v1.5
 ARG RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-ARG READER_MODEL=deepset/deberta-v3-large-squad2
+# QA model for Local mode. Smaller image: --build-arg QA_MODEL=deepset/roberta-base-squad2
+ARG QA_MODEL=deepset/deberta-v3-large-squad2
 RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering; \
 SentenceTransformer('${EMBED_MODEL}'); CrossEncoder('${RERANK_MODEL}'); \
-AutoTokenizer.from_pretrained('${READER_MODEL}'); AutoModelForQuestionAnswering.from_pretrained('${READER_MODEL}')"
+AutoTokenizer.from_pretrained('${QA_MODEL}'); AutoModelForQuestionAnswering.from_pretrained('${QA_MODEL}')"
 
 COPY alembic.ini ./
 COPY migrations ./migrations
@@ -37,7 +38,7 @@ RUN mkdir -p /app/data
 
 ENV HF_HUB_OFFLINE=1 \
     DATA_DIR=/app/data \
-    READER_MODEL=${READER_MODEL} \
+    QA_MODEL=${QA_MODEL} \
     WEB_CONCURRENCY=1
 
 EXPOSE 8000

@@ -147,7 +147,11 @@ export function renderAnswer(text, knownNumbers) {
     const line = raw.trim();
     const ul = line.match(/^[-*•]\s+(.*)$/);
     const ol = line.match(/^\d+[.)]\s+(.*)$/);
-    if (ul || ol) {
+    const quote = line.match(/^&gt;\s?(.*)$/); // "> quoted sentence [n]" (escaped by escapeHtml)
+    if (quote) {
+      flush(); close();
+      html += `<blockquote>${inline(quote[1])}</blockquote>`;
+    } else if (ul || ol) {
       flush();
       const tag = ul ? "ul" : "ol";
       if (list !== tag) { close(); html += `<${tag}>`; list = tag; }
@@ -161,6 +165,13 @@ export function renderAnswer(text, knownNumbers) {
       ? `<button type="button" class="c-chip" data-cite="${num}" aria-label="Open source ${num}">${num}</button>`
       : `<span class="c-chip c-chip--inactive" aria-label="Source ${num}">${num}</span>`;
   }).join(""));
+}
+
+/** Escape text, mark the exact extracted answer [start, end), and emphasise question words elsewhere. */
+export function highlightWithSpan(text, range, question) {
+  if (!range || range.length !== 2 || range[0] >= range[1] || range[1] > text.length) return highlight(text, question);
+  const [a, b] = range;
+  return `${highlight(text.slice(0, a), question)}<mark class="c-mark--answer">${escapeHtml(text.slice(a, b))}</mark>${highlight(text.slice(b), question)}`;
 }
 
 /** Escape text and emphasise words from the question (for the source drawer). */

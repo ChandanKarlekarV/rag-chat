@@ -2,7 +2,7 @@
 
 import { request, uploadFile } from "./api.js";
 import { ask, clearThread, loadConversation, renderEmpty, setDebug, stop } from "./chat.js";
-import { emit, getApiKey, isKeyRemembered, on, readyDocs, setApiKey, state } from "./state.js";
+import { MODE_LABELS, emit, getApiKey, isKeyRemembered, keyHeaders, on, readyDocs, setApiKey, state } from "./state.js";
 import {
   closeDrawer, confirmDanger, escapeHtml, fmtDate, icon, isDrawerOpen, js, setTheme, showDrawer, themeChoice, toast, useThemeFor,
 } from "./ui.js";
@@ -138,7 +138,8 @@ async function enterApp(user) {
   renderDocSkeleton();
   await Promise.all([loadDocs(), loadConversations()]);
   clearThread();
-  checkLlm();
+  state.mode = null;
+  loadModes();
   js("question").focus();
 }
 
@@ -478,73 +479,109 @@ for (const name of ["new-chat", "new-chat-top"]) {
 
 /* ======================= settings ======================= */
 
-function renderLlm(r) {
-  const dot = js("llm-dot");
-  const status = js("llm-status");
-  const badgeEl = js("key-badge");
-  const notice = js("key-notice");
-  dot.className = "c-dot";
-  if (!r) { status.textContent = "Checking the answer engine…"; return; }
-  const hasKey = Boolean(getApiKey());
-  if (r.ok) {
-    dot.classList.add("c-dot--ok");
-    status.textContent = {
-      local: "Built-in model · no key needed",
-      fake: "Offline demo model",
-    }[r.provider] || (r.source === "browser" ? "Claude · your key" : "Claude · server key");
-    badgeEl.className = `c-badge ${r.source === "browser" ? "c-badge--ready" : "c-badge--neutral"}`;
-    badgeEl.innerHTML = r.source === "browser" ? `${icon("check")}Working` : "Optional";
-    notice.hidden = true;
-  } else {
-    dot.classList.add(r.source === "none" ? "c-dot--warn" : "c-dot--bad");
-    status.textContent = r.source === "none" ? "No answer engine" : "API key not working";
-    badgeEl.className = `c-badge ${r.source === "none" ? "c-badge--neutral" : "c-badge--failed"}`;
-    badgeEl.innerHTML = r.source === "none" ? "Not set" : `${icon("alert")}Not working`;
-    js("key-notice-text").textContent = r.source === "none"
-      ? "Add your Anthropic API key to get written answers. Search already works."
-      : "Your API key isn't working. Open Settings to fix it.";
-    js("key-notice-btn").textContent = r.source === "none" ? "Add API key" : "Fix API key";
-    notice.hidden = false;
-  }
-  js("engine-line").textContent = r && r.ok && r.provider === "local"
-    ? "Answering now: the built-in model, which quotes the exact sentence from your PDF. Add a key to get written, summarised answers from Claude instead."
-    : r && r.ok && r.source === "browser"
-      ? "Answering now: Claude, with your key. Remove the key to go back to the built-in model."
-      : hasKey ? "" : "No key: answers come from the built-in model.";
-}
-async function checkLlm(key = getApiKey()) {
-  renderLlm(null);
+const MODE_HELP = {
+  local: "Finds and quotes the answer directly from your PDF. Free, private, works offline.",
+  ollama: "Writes an answer using a model running on your computer.",
+  api: "Writes a fuller answer using Claude. Needs an API key.",
+};
+
+/** Load which modes can run (the pasted key travels in a header, never stored) and pick one. */
+async function loadModes() {
   try {
-    const headers = key ? { "X-Anthropic-Api-Key": key } : {};
-    const r = await request("POST", "/llm/check", { headers });
-    state.llm = r;
-    renderLlm(r);
-    return r;
+    const m = await request("GET", "/chat/modes", { headers: keyHeaders() });
+    state.modes = m;
+    const available = new Set(m.modes.filter((x) => x.available).map((x) => x.mode));
+    const preferred = m.default_mode !== "auto" && available.has(m.default_mode) ? m.default_mode : null;
+    if (!state.mode || !available.has(state.mode) || preferred) state.mode = preferred || m.recommended;
+    renderModes();
   } catch (err) {
     js("llm-status").textContent = "Couldn't reach the server";
     js("llm-dot").className = "c-dot c-dot--bad";
-    return { ok: false, message: err.message };
   }
 }
-on("llm-check", () => checkLlm());
+on("modes-changed", () => loadModes());
+
+function renderModes() {
+  const m = state.modes;
+  if (!m) return;
+  const byMode = Object.fromEntries(m.modes.map((x) => [x.mode, x]));
+  document.querySelectorAll('[data-js="mode-group"] [data-mode]').forEach((b) => {
+    const info = byMode[b.dataset.mode];
+    b.disabled = !info.available;
+    b.title = info.available ? info.description : info.reason;
+    b.setAttribute("aria-checked", String(b.dataset.mode === state.mode));
+  });
+  const unavailable = m.modes.filter((x) => !x.available);
+  const setup = unavailable.length
+    ? ` <span class="u-muted">${unavailable.map((x) => `${escapeHtml(x.title)}: ${escapeHtml(x.reason)}`).join(" ")}</span> <button type="button" class="c-link" data-js="mode-setup">Set up</button>`
+    : "";
+  js("mode-help").innerHTML = `${escapeHtml(MODE_HELP[state.mode] || "")}${setup}`;
+  js("mode-setup")?.addEventListener("click", openSettings);
+  js("key-invite").hidden = !(state.mode === "local" && !byMode.api.available);
+  js("llm-dot").className = "c-dot c-dot--ok";
+  js("llm-status").textContent = `Answering: ${MODE_LABELS[state.mode]}`;
+  const hasKey = Boolean(getApiKey());
+  js("key-badge").className = `c-badge ${hasKey ? "c-badge--ready" : "c-badge--neutral"}`;
+  js("key-badge").innerHTML = hasKey ? `${icon("check")}Saved in this browser` : "Not set";
+  js("default-mode").value = m.default_mode;
+  const select = js("ollama-model");
+  select.innerHTML = m.ollama_models.length
+    ? m.ollama_models.map((n) => `<option value="${escapeHtml(n)}"${n === m.ollama_model || n === `${m.ollama_model}:latest` ? " selected" : ""}>${escapeHtml(n)}</option>`).join("")
+    : `<option value="">${escapeHtml(byMode.ollama.reason)}</option>`;
+  select.disabled = !m.ollama_models.length;
+}
+
+async function savePreferences(body) {
+  try {
+    await request("PUT", "/me/preferences", { json: body });
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function setMode(mode) {
+  const info = state.modes && state.modes.modes.find((x) => x.mode === mode);
+  if (!info || !info.available) {
+    toast(info ? `${info.title} isn't available: ${info.reason}` : "That mode isn't available.", "error");
+    if (mode === "api") openSettings();
+    return;
+  }
+  state.mode = mode;
+  renderModes();
+  savePreferences({ default_mode: mode }); // the chosen mode is saved per user
+}
+on("set-mode", setMode);
+
+js("mode-group").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]");
+  if (b && !b.disabled) setMode(b.dataset.mode);
+});
+js("key-invite-btn").addEventListener("click", () => openSettings());
+
+js("default-mode").addEventListener("change", async (e) => {
+  await savePreferences({ default_mode: e.target.value });
+  state.mode = null;
+  await loadModes();
+});
+js("ollama-model").addEventListener("change", (e) => { if (e.target.value) savePreferences({ ollama_model: e.target.value }); });
 
 function openSettings() {
   const k = getApiKey();
   js("key-input").value = "";
   js("key-input").placeholder = k ? `Saved key ending in ${k.slice(-4)}. Paste a new one to replace it.` : "sk-ant-…";
   js("key-remember").checked = isKeyRemembered();
+  js("key-remember-warn").hidden = !js("key-remember").checked;
   js("key-remove").disabled = !k;
   js("key-error").hidden = true;
   js("key-input").removeAttribute("aria-invalid");
-  js("key-result").textContent = state.llm ? state.llm.message : "";
+  js("key-result").textContent = "";
   const choice = themeChoice();
   document.querySelectorAll("[data-theme-choice]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === choice)));
   js("debug-toggle").checked = state.debug;
+  loadModes();
   showDrawer("settings-drawer", { focus: js("key-input") });
 }
 js("open-settings").addEventListener("click", openSettings);
 on("open-settings", openSettings);
-js("key-notice-btn").addEventListener("click", openSettings);
+js("key-remember").addEventListener("change", (e) => { js("key-remember-warn").hidden = !e.target.checked; });
 
 function keyError(message) {
   const err = js("key-error");
@@ -565,19 +602,24 @@ js("key-form").addEventListener("submit", async (e) => {
   const btn = js("key-save");
   busyButton(btn, true, "Testing…");
   js("key-result").textContent = "Contacting Anthropic…";
-  const r = await checkLlm(key);
-  busyButton(btn, false, "Save and test");
+  let r;
+  try {
+    r = await request("POST", "/chat/test-key", { headers: { "X-LLM-Key": key } });
+  } catch (err) {
+    r = { ok: false, message: err.message };
+  }
+  busyButton(btn, false, "Test and save key");
   if (r.ok) {
     setApiKey(key, js("key-remember").checked);
     js("key-remove").disabled = false;
     js("key-input").value = "";
     js("key-input").placeholder = `Saved key ending in ${key.slice(-4)}.`;
-    js("key-result").textContent = `It works. ${r.message} You can start asking.`;
-    toast("Claude is connected.");
+    js("key-result").textContent = r.message;
+    toast("Claude API mode is ready.");
+    await loadModes();
   } else {
     keyError(`${r.message} The key was not saved.`);
     js("key-result").textContent = "";
-    checkLlm();
   }
 });
 
@@ -593,8 +635,9 @@ js("key-remove").addEventListener("click", async () => {
   setApiKey("", false);
   js("key-remove").disabled = true;
   js("key-input").placeholder = "sk-ant-…";
-  const r = await checkLlm();
-  js("key-result").textContent = r.ok ? "Your key was removed. The server's own key is still active." : "Your key was removed from this browser.";
+  js("key-result").textContent = "Your key was removed from this browser.";
+  state.mode = null;
+  await loadModes();
 });
 
 js("theme-group").addEventListener("click", (e) => {

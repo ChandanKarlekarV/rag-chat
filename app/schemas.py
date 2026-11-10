@@ -200,4 +200,5 @@ class HealthResponse(BaseModel):
     redis: bool | None = None  # None when Redis isn't configured
     models_loaded: bool
     local_model: str | None  # the extractive QA model, when loaded
+    device: str  # where the local models run: "cuda" (GPU) or "cpu"
     server_key: bool  # the server has its own ANTHROPIC_API_KEY

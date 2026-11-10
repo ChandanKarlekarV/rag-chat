@@ -2,7 +2,7 @@
 
 import { askStream, request } from "./api.js";
 import { emit, getApiKey, readyDocs, state } from "./state.js";
-import { escapeHtml, highlight, icon, js, pageLabel, renderAnswer, showDrawer, toast } from "./ui.js";
+import { escapeHtml, highlightWithSpan, icon, js, pageLabel, renderAnswer, showDrawer, toast } from "./ui.js";
 
 const thread = js("thread");
 const scroller = js("scroller");
@@ -109,18 +109,31 @@ function actions(answerable) {
   </div>`;
 }
 
-/** Render a finished assistant message into `el` (used live and when loading history). */
-const ENGINE_NOTE = {
-  local: "Quoted word for word from your PDF by the built-in model",
-  anthropic: "Written by Claude from the cited passages",
-};
+const HINT_KEY = () => `rag-hint-dismissed:${state.user ? state.user.id : "anon"}`;
+const hintDismissed = () => { try { return localStorage.getItem(HINT_KEY()) === "1"; } catch (_) { return false; } };
 
-function renderAssistant(el, { answer, answerable, citations, retrieved, engine, rewrite }) {
+/** Mode chip + confidence in words + the honest label ("Extractive · quoted from your document"). */
+function answerMeta(mode, label, confidenceLabel) {
+  if (!mode) return "";
+  const kind = mode === "local" ? "Extractive" : "Generated";
+  const conf = confidenceLabel ? `<span class="c-badge c-badge--neutral">${escapeHtml(confidenceLabel)}</span>` : "";
+  return `<div class="c-answer-meta"><span class="c-badge ${mode === "local" ? "c-badge--ready" : "c-badge--neutral"}">${kind}</span>${conf}<span class="c-meta">${escapeHtml(label || "")}</span></div>`;
+}
+
+function hintNotice(hint) {
+  if (!hint || hintDismissed()) return "";
+  return `<div class="c-notice" role="note"><span>${escapeHtml(hint)}</span>
+    <span class="flex gap-2"><button type="button" class="c-btn c-btn--secondary c-btn--sm" data-act="switch-api">Switch mode</button>
+    <button type="button" class="c-btn c-btn--ghost c-btn--sm" data-act="dismiss-hint">Dismiss</button></span></div>`;
+}
+
+/** Render a finished assistant message into `el` (used live and when loading history). */
+function renderAssistant(el, { answer, answerable, citations, retrieved, mode, label, confidenceLabel, hint, rewrite }) {
   el.citations = citations;
   el.answer = answer;
   const known = new Set(citations.map((c) => c.n));
   const body = answerable
-    ? `<div class="c-msg__body">${renderAnswer(answer, known)}</div>${sourcesRow(citations)}${ENGINE_NOTE[engine] ? `<p class="c-meta">${ENGINE_NOTE[engine]}</p>` : ""}`
+    ? `<div class="c-msg__body">${renderAnswer(answer, known)}</div>${sourcesRow(citations)}${answerMeta(mode, label, confidenceLabel)}${hintNotice(hint)}`
     : fallbackCard();
   const note = rewrite ? `<p class="c-meta">Follow-up understood as: <em>${escapeHtml(rewrite)}</em></p>` : "";
   el.innerHTML = `<p class="sr-only">Answer:</p>${note}${body}${debugTable(retrieved, citations)}${actions(answerable)}`;
@@ -138,8 +151,13 @@ function addAssistant(q) {
 
 function failAssistant(el, message, partial, code = "") {
   el.removeAttribute("aria-busy");
-  const fix = code === "no_api_key" || code === "llm_error"
-    ? `<button type="button" class="c-btn c-btn--secondary c-btn--sm" data-act="settings">${icon("key")}${code === "no_api_key" ? "Add API key" : "Check API key"}</button>` : "";
+  const local = `<button type="button" class="c-btn c-btn--secondary c-btn--sm" data-act="switch-local">Switch to Local mode</button>`;
+  const fixes = {
+    no_api_key: `<button type="button" class="c-btn c-btn--secondary c-btn--sm" data-act="settings">${icon("key")}Add API key</button>${local}`,
+    llm_error: `<button type="button" class="c-btn c-btn--secondary c-btn--sm" data-act="settings">${icon("key")}Check API key</button>${local}`,
+    ollama_error: local,
+  };
+  const fix = fixes[code] || "";
   el.innerHTML = `${partial ? `<div class="c-msg__body">${escapeHtml(partial)}</div>` : ""}
     <div class="c-msg__error" role="alert">${icon("alert")}<p>${escapeHtml(message)}</p></div>
     <div class="c-msg__actions">${fix}<button type="button" class="c-btn c-btn--ghost c-btn--sm" data-act="retry">${icon("retry")}Retry</button></div>`;
@@ -171,10 +189,16 @@ export async function ask(text) {
   let citations = [];
   let retrieved = [];
   let rewrite = "";
+  let label = "";
   const live = () => el.querySelector('[data-js="live"]');
   try {
     await askStream(
-      { question: q, conversation_id: state.conversationId, doc_ids: state.selected.size ? [...state.selected] : null },
+      {
+        question: q,
+        conversation_id: state.conversationId,
+        doc_ids: state.selected.size ? [...state.selected] : null,
+        mode: state.mode,
+      },
       {
         apiKey: getApiKey(),
         signal: state.controller.signal,
@@ -186,12 +210,16 @@ export async function ask(text) {
             body.textContent = streamed;
             scrollDown();
           },
+          mode: (d) => { label = d.label; },
           rewrite: (d) => { rewrite = d.search_query; },
           citations: (d) => { citations = d.citations; retrieved = d.retrieved; },
           done: (d) => {
             finished = true;
             el.removeAttribute("aria-busy");
-            renderAssistant(el, { answer: d.answer, answerable: d.answerable, citations, retrieved, engine: d.engine, rewrite });
+            renderAssistant(el, {
+              answer: d.answer, answerable: d.answerable, citations, retrieved, rewrite,
+              mode: d.mode, label: d.label || label, confidenceLabel: d.confidence_label, hint: d.hint,
+            });
             const isNew = state.conversationId !== d.conversation_id;
             state.conversationId = d.conversation_id;
             if (isNew) emit("conversations-changed");
@@ -200,7 +228,7 @@ export async function ask(text) {
           error: (d) => {
             finished = true;
             failAssistant(el, d.message, streamed, d.code);
-            if (d.code === "no_api_key" || d.code === "llm_error") emit("llm-check");
+            emit("modes-changed");
           },
         },
       },
@@ -243,6 +271,14 @@ thread.addEventListener("click", async (e) => {
     js("file-input").click();
   } else if (act === "settings") {
     emit("open-settings");
+  } else if (act === "switch-local") {
+    emit("set-mode", "local");
+    toast("Switched to Local mode. Retry to ask again.");
+  } else if (act === "switch-api") {
+    emit("set-mode", "api");
+  } else if (act === "dismiss-hint") {
+    try { localStorage.setItem(HINT_KEY(), "1"); } catch (_) { /* storage blocked */ }
+    e.target.closest(".c-notice")?.remove();
   }
 });
 
@@ -253,7 +289,7 @@ function openSource(c, q, opener) {
   js("source-file").textContent = c.filename;
   js("source-file").title = c.filename;
   js("source-pages").textContent = c.page_start === c.page_end ? `Page ${c.page_start}` : `Pages ${c.page_start}–${c.page_end}`;
-  js("source-text").innerHTML = highlight(c.text || c.snippet, q);
+  js("source-text").innerHTML = highlightWithSpan(c.text || c.snippet, c.highlight, q);
   const scores = js("source-scores");
   scores.hidden = !state.debug;
   const f = (v, d) => (v === null || v === undefined ? "—" : Number(v).toFixed(d));
@@ -283,7 +319,9 @@ export async function loadConversation(id) {
     const el = document.createElement("div");
     el.className = "c-msg c-msg--assistant";
     el.dataset.question = lastQuestion;
-    renderAssistant(el, { answer: m.content, answerable: m.answerable, citations: m.citations, retrieved: [] });
+    renderAssistant(el, {
+      answer: m.content, answerable: m.answerable, citations: m.citations, retrieved: [], mode: m.mode, label: m.label,
+    });
     thread.appendChild(el);
   }
   renderEmpty();

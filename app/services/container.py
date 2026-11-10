@@ -55,6 +55,7 @@ class Container:
     ask_limiter: RateLimiter
     redis: Any = None
     models_loaded: bool = True
+    device: str = "cpu"  # where the local models run
 
     def engine(
         self, user_key: str | None, requested: str | None, preferred: str | None, ollama_model: str | None
@@ -76,16 +77,22 @@ def build_container(
     ollama_factory: OllamaFactory | None = None,
 ) -> Container:
     """Wire the app. Tests pass light fakes for the models, the reader and the LLM/Ollama factories."""
-    if embedder is None or reranker is None:
-        from app.retrieval.embedder import get_embedder  # heavy imports only when real models are used
-        from app.retrieval.reranker import get_reranker
+    device = "cpu"
+    if embedder is None or reranker is None or (reader is None and settings.load_local_model):
+        from app.devices import limit_cpu_threads, resolve_device  # heavy imports only for real models
 
-        embedder = embedder or get_embedder(settings.embed_model)
-        reranker = reranker or get_reranker(settings.rerank_model)
-    if reader is None and settings.load_local_model:
-        from app.generation.reader import get_reader
+        limit_cpu_threads(settings.torch_threads)
+        device = resolve_device(settings.device)
+        if embedder is None or reranker is None:
+            from app.retrieval.embedder import get_embedder
+            from app.retrieval.reranker import get_reranker
 
-        reader = get_reader(settings.qa_model)
+            embedder = embedder or get_embedder(settings.embed_model, device)
+            reranker = reranker or get_reranker(settings.rerank_model, device)
+        if reader is None and settings.load_local_model:
+            from app.generation.reader import get_reader
+
+            reader = get_reader(settings.qa_model, device)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(settings.sqlalchemy_url)
     db.migrate()
@@ -132,4 +139,5 @@ def build_container(
         auth_limiter=auth_limiter,
         ask_limiter=ask_limiter,
         redis=redis_client,
+        device=device,
     )

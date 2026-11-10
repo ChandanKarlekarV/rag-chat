@@ -9,9 +9,18 @@ export const state = {
   busy: false,
   controller: null,
   debug: false,
-  llm: null, // last /llm/check result
+  modes: null, // last GET /chat/modes result
+  mode: null, // the mode used for the next question: "local" | "ollama" | "api"
   memoryKey: "",
 };
+
+export const MODE_LABELS = { local: "Local · no key", ollama: "Ollama", api: "Claude API" };
+
+/** Headers carrying the user's pasted key (never stored server-side). */
+export function keyHeaders() {
+  const k = getApiKey();
+  return k ? { "X-LLM-Key": k } : {};
+}
 
 const listeners = {};
 export const on = (name, fn) => { (listeners[name] ||= []).push(fn); };

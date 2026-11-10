@@ -11,6 +11,11 @@ services:
     environment:
       DATA_DIR: /app/data
       DATABASE_URL: sqlite:////app/data/app.db
+      # Ollama (optional) runs on the host, not in this image. unverified: host.docker.internal is a
+      # Docker feature (mapped below for Linux); Ollama's own docs don't cover container-to-host access.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

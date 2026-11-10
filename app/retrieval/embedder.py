@@ -10,10 +10,10 @@ BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 class Embedder:
     """Encodes passages and queries into L2-normalised vectors."""
 
-    def __init__(self, model_name: str, batch_size: int = 32) -> None:
+    def __init__(self, model_name: str, device: str = "cpu", batch_size: int = 32) -> None:
         self.model_name = model_name
         self.batch_size = batch_size
-        self._model = SentenceTransformer(model_name, device="cpu")
+        self._model = SentenceTransformer(model_name, device=device)
         self._query_prefix = BGE_QUERY_PREFIX if "bge" in model_name.lower() else ""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -30,6 +30,6 @@ class Embedder:
 
 
 @lru_cache
-def get_embedder(model_name: str) -> Embedder:
-    """Return the singleton embedder for `model_name`."""
-    return Embedder(model_name)
+def get_embedder(model_name: str, device: str = "cpu") -> Embedder:
+    """Return the singleton embedder for `model_name` on `device`."""
+    return Embedder(model_name, device)

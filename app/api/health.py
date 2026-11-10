@@ -32,5 +32,6 @@ def health(c: Container = Depends(get_container)) -> HealthResponse:
         redis=redis_ok,
         models_loaded=c.models_loaded,
         local_model=c.router.local.name if c.router.local else None,
+        device=c.device,
         server_key=bool(c.settings.anthropic_api_key),
     )

@@ -68,7 +68,7 @@ export function uploadFile(file, onProgress) {
 /** POST /chat/ask and dispatch SSE events to `on[eventName](data)`. */
 export async function askStream(body, { apiKey, signal, on }) {
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream", "X-Requested-With": "fetch" };
-  if (apiKey) headers["X-Anthropic-Api-Key"] = apiKey;
+  if (apiKey) headers["X-LLM-Key"] = apiKey;
   let res;
   try {
     res = await fetch("/chat/ask", { method: "POST", headers, body: JSON.stringify(body), signal, credentials: "same-origin" });

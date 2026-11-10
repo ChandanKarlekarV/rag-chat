@@ -152,7 +152,7 @@
       <div class="flex items-center justify-between gap-2 px-4 py-3" style="border-top: var(--border-width) solid var(--color-border)">
         <div class="flex min-w-0 items-center gap-2">
           <span class="c-dot" data-js="llm-dot" aria-hidden="true"></span>
-          <span class="c-meta u-truncate" data-js="llm-status">Checking Claude…</span>
+          <span class="c-meta u-truncate" data-js="llm-status">Checking answer modes…</span>
         </div>
         <button class="c-btn c-btn--ghost c-btn--sm" data-js="open-settings"><svg class="c-icon"><use href="#i-gear"/></svg>Settings</button>
       </div>
@@ -188,10 +188,15 @@
 
       <form class="c-composer-bar" data-js="composer" novalidate>
         <div class="c-composer mx-auto w-full" style="max-width: calc(var(--size-measure) + var(--space-12))">
-          <div class="c-notice" data-js="key-notice" hidden>
-            <span class="flex items-center gap-2"><svg class="c-icon"><use href="#i-key"/></svg><span data-js="key-notice-text">Add your Anthropic API key to get written answers.</span></span>
-            <button type="button" class="c-btn c-btn--secondary c-btn--sm" data-js="key-notice-btn">Add API key</button>
+          <div class="c-mode-bar">
+            <div class="c-segmented" role="radiogroup" aria-label="Answer mode" data-js="mode-group">
+              <button type="button" role="radio" aria-checked="false" data-mode="local">Local · no key</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="ollama">Ollama</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="api">Claude API</button>
+            </div>
+            <p class="c-help" data-js="mode-help" aria-live="polite"></p>
           </div>
+          <p class="c-help" data-js="key-invite" hidden>Want fuller answers? <button type="button" class="c-link" data-js="key-invite-btn">Add an API key</button></p>
           <p class="c-scope" data-js="scope" id="scope-line"><svg class="c-icon"><use href="#i-search"/></svg><span data-js="scope-text">Upload a PDF to start</span></p>
           <div class="c-composer__row">
             <label for="question" class="sr-only">Ask a question about your documents</label>
@@ -234,13 +239,30 @@
       <button class="c-btn c-btn--ghost c-btn--icon" data-js="close-drawer" aria-label="Close settings"><svg class="c-icon"><use href="#i-x"/></svg></button>
     </div>
     <div class="c-drawer__body u-scroll">
+      <section class="flex flex-col gap-3" aria-labelledby="set-mode-title">
+        <h3 class="c-label" id="set-mode-title">Answer mode</h3>
+        <div class="c-field">
+          <label class="c-label" for="default-mode">Default mode</label>
+          <select class="c-input" id="default-mode" data-js="default-mode" aria-describedby="default-mode-help">
+            <option value="auto">Automatic (Claude if a key is set, else Ollama, else Local)</option>
+            <option value="local">Local · no key</option>
+            <option value="ollama">Ollama</option>
+            <option value="api">Claude API</option>
+          </select>
+          <p class="c-help" id="default-mode-help">Saved to your account. You can also switch above the question box.</p>
+        </div>
+        <div class="c-field">
+          <label class="c-label" for="ollama-model">Ollama model</label>
+          <select class="c-input" id="ollama-model" data-js="ollama-model" aria-describedby="ollama-help"></select>
+          <p class="c-help" id="ollama-help" data-js="ollama-help">Ollama runs models on your own computer. Install it from ollama.com, then run <code>ollama pull llama3.2</code>.</p>
+        </div>
+      </section>
       <section class="flex flex-col gap-3" aria-labelledby="set-key-title">
         <div class="flex items-center justify-between gap-2">
           <h3 class="c-label" id="set-key-title">Claude API key</h3>
-          <span class="c-badge c-badge--neutral" data-js="key-badge">Optional</span>
+          <span class="c-badge c-badge--neutral" data-js="key-badge">Not set</span>
         </div>
-        <p class="c-help">Optional. Without a key, rag-chat answers with its built-in model on this server. With your own Anthropic key it uses Claude for written, summarised answers. Create a key in the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a>.</p>
-        <p class="c-card c-card--muted c-help" data-js="engine-line" role="status"></p>
+        <p class="c-help">Optional. Needed only for Claude API mode. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Where do I get a key?</a></p>
         <form class="flex flex-col gap-3" data-js="key-form" novalidate autocomplete="off">
           <div class="c-field">
             <label class="c-label" for="key-input">API key</label>
@@ -248,14 +270,15 @@
               <input class="c-input c-input--mono" id="key-input" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-describedby="key-help key-error" data-js="key-input" />
               <button type="button" class="c-btn c-btn--secondary" data-js="key-reveal" aria-pressed="false">Show</button>
             </div>
-            <p class="c-help" id="key-help">Kept only in this browser and sent with each question. The server never stores or logs it.</p>
+            <p class="c-help" id="key-help">Your key stays in this browser and is sent only to run your question.</p>
             <p class="c-error-text" id="key-error" data-js="key-error" hidden></p>
           </div>
           <label class="c-check"><input type="checkbox" data-js="key-remember" />Remember on this device</label>
+          <p class="c-help" data-js="key-remember-warn" hidden>The key will be saved in this browser until you forget it. Only use this on your own device.</p>
           <p class="c-help" data-js="key-result" role="status" aria-live="polite"></p>
           <div class="flex flex-wrap items-center gap-2">
-            <button type="submit" class="c-btn c-btn--primary" data-js="key-save"><span class="c-btn__label">Save and test</span></button>
-            <button type="button" class="c-btn c-btn--ghost" data-js="key-remove">Remove key</button>
+            <button type="submit" class="c-btn c-btn--primary" data-js="key-save"><span class="c-btn__label">Test and save key</span></button>
+            <button type="button" class="c-btn c-btn--ghost" data-js="key-remove">Forget my key</button>
           </div>
         </form>
       </section>

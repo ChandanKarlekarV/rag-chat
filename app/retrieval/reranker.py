@@ -10,9 +10,9 @@ from app.schemas import RetrievedChunk
 class Reranker:
     """Scores (question, passage) pairs jointly; higher is more relevant (raw logits)."""
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str, device: str = "cpu") -> None:
         self.model_name = model_name
-        self._model = CrossEncoder(model_name, device="cpu", max_length=512)
+        self._model = CrossEncoder(model_name, device=device, max_length=512)
 
     def score(self, question: str, passages: list[str]) -> list[float]:
         """Return one relevance score per passage."""
@@ -30,6 +30,6 @@ class Reranker:
 
 
 @lru_cache
-def get_reranker(model_name: str) -> Reranker:
-    """Return the singleton reranker for `model_name`."""
-    return Reranker(model_name)
+def get_reranker(model_name: str, device: str = "cpu") -> Reranker:
+    """Return the singleton reranker for `model_name` on `device`."""
+    return Reranker(model_name, device)

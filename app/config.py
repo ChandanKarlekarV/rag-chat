@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_timeout_s: float = 60.0
 
+    # Where local models run: "auto" (NVIDIA GPU if available, else CPU), "cuda" or "cpu".
+    device: str = "auto"
+    torch_threads: int = 0  # cap CPU threads used by the models (0 = all cores)
+
     embed_model: str = "BAAI/bge-small-en-v1.5"
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
