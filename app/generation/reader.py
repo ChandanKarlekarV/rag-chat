@@ -97,6 +97,8 @@ def _best_span(start: torch.Tensor, end: torch.Tensor, allowed: set[int]) -> tup
 def sentence_around(text: str, start: int, end: int, extra: int = 0) -> tuple[str, int, int]:
     """The sentence(s) of `text` containing [start, end) plus `extra` following sentences,
     and the span offsets inside the returned text."""
+    while start < end and text[start].isspace():  # tokenizers often include the leading space
+        start += 1
     bounds = [0] + [m.end() for m in _SENTENCE_END.finditer(text)] + [len(text)]
     s_start = max(b for b in bounds if b <= start)
     after = [b for b in bounds if b >= end]

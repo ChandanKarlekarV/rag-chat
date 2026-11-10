@@ -8,6 +8,25 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Real Postgres and Redis so the multi-server backends are tested, not just their fakes.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag
+          POSTGRES_DB: rag
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rag -d rag" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://rag:rag@localhost:5432/rag
+      TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       # Action versions from the actions/checkout and actions/setup-python READMEs (v7).
       - uses: actions/checkout@v7
@@ -24,5 +43,9 @@ jobs:
         run: python scripts/check_contrast.py
       - name: No gradients in the UI
         run: "! grep -rni gradient app/static"
-      - name: Tests (deprecations are errors)
+      - name: Migrations apply cleanly
+        run: |
+          python -c "from app.db.session import Database; Database('sqlite:///ci.db').migrate()"
+          python -c "import os; from app.db.session import Database; Database(os.environ['TEST_DATABASE_URL']).migrate()"
+      - name: Tests (deprecations are errors; Postgres and Redis tests run here)
         run: pytest -W error::DeprecationWarning

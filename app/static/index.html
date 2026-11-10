@@ -237,9 +237,10 @@
       <section class="flex flex-col gap-3" aria-labelledby="set-key-title">
         <div class="flex items-center justify-between gap-2">
           <h3 class="c-label" id="set-key-title">Claude API key</h3>
-          <span class="c-badge c-badge--neutral" data-js="key-badge">Not set</span>
+          <span class="c-badge c-badge--neutral" data-js="key-badge">Optional</span>
         </div>
-        <p class="c-help">rag-chat writes answers with your own Anthropic key. Create one in the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a>.</p>
+        <p class="c-help">Optional. Without a key, rag-chat answers with its built-in model on this server. With your own Anthropic key it uses Claude for written, summarised answers. Create a key in the <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Anthropic Console</a>.</p>
+        <p class="c-card c-card--muted c-help" data-js="engine-line" role="status"></p>
         <form class="flex flex-col gap-3" data-js="key-form" novalidate autocomplete="off">
           <div class="c-field">
             <label class="c-label" for="key-input">API key</label>

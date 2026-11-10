@@ -1,0 +1,53 @@
+# Multi-server mode: Postgres + Redis + a Chroma server, and several app workers.
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up --build
+# Every worker loads the models (~2.5 GB RAM each with the large reader); size WEB_CONCURRENCY to your RAM.
+services:
+  rag-chat:
+    environment:
+      DATABASE_URL: postgresql+psycopg://rag:rag@postgres:5432/rag
+      REDIS_URL: redis://redis:6379/0
+      CHROMA_URL: http://chroma:8000
+      WEB_CONCURRENCY: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: rag
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Runs Chroma's own server from the app image, so client and server versions always match.
+  chroma:
+    build: .
+    image: rag-chat:latest
+    command: ["chroma", "run", "--host", "0.0.0.0", "--port", "8000", "--path", "/chroma"]
+    volumes:
+      - chromadata:/chroma
+    healthcheck:
+      disable: true
+
+volumes:
+  pgdata:
+  chromadata:

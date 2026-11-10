@@ -15,12 +15,18 @@ WORKDIR /app
 COPY requirements.lock .
 RUN pip install -r requirements.lock
 
-# Bake both models into the image so the container starts fast and works offline.
+# Bake every model into the image so the container starts fast and works offline:
+# embeddings, the reranker, and the local answer model (used when no API key is set).
 ARG EMBED_MODEL=BAAI/bge-small-en-v1.5
 ARG RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+ARG READER_MODEL=deepset/deberta-v3-large-squad2
 RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('${EMBED_MODEL}'); CrossEncoder('${RERANK_MODEL}')"
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering; \
+SentenceTransformer('${EMBED_MODEL}'); CrossEncoder('${RERANK_MODEL}'); \
+AutoTokenizer.from_pretrained('${READER_MODEL}'); AutoModelForQuestionAnswering.from_pretrained('${READER_MODEL}')"
 
+COPY alembic.ini ./
+COPY migrations ./migrations
 COPY app ./app
 COPY assets ./assets
 COPY scripts ./scripts
@@ -30,10 +36,13 @@ COPY samples ./samples
 RUN mkdir -p /app/data
 
 ENV HF_HUB_OFFLINE=1 \
-    DATA_DIR=/app/data
+    DATA_DIR=/app/data \
+    READER_MODEL=${READER_MODEL} \
+    WEB_CONCURRENCY=1
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=4).status == 200 else 1)"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# WEB_CONCURRENCY > 1 needs the multi-server setup (Redis + Chroma server): see docker-compose.scale.yml.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY}"]

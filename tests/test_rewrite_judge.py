@@ -95,6 +95,13 @@ def test_format_answer_keeps_space_before_bold_span():
     assert "life, **return it to the take-back programme**" in out
 
 
+def test_span_with_leading_space_does_not_pull_in_the_previous_sentence():
+    text = "The claim is approved. The warranty is transferable to a new owner. Register within 90 days."
+    start = text.index(" The warranty")
+    out = format_answer(Span(1, start, text.index(" owner") + 6, 4.0), [_src(text)])
+    assert out == "**The warranty is transferable to a new owner**. [1]"
+
+
 def test_yes_no_questions_include_the_qualifying_sentence():
     text = "Mount it on concrete or brick. Plasterboard walls are not suitable. Allow four hours."
     start = text.index("concrete")

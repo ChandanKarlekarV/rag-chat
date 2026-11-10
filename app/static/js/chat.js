@@ -110,14 +110,20 @@ function actions(answerable) {
 }
 
 /** Render a finished assistant message into `el` (used live and when loading history). */
-function renderAssistant(el, { answer, answerable, citations, retrieved }) {
+const ENGINE_NOTE = {
+  local: "Quoted word for word from your PDF by the built-in model",
+  anthropic: "Written by Claude from the cited passages",
+};
+
+function renderAssistant(el, { answer, answerable, citations, retrieved, engine, rewrite }) {
   el.citations = citations;
   el.answer = answer;
   const known = new Set(citations.map((c) => c.n));
   const body = answerable
-    ? `<div class="c-msg__body">${renderAnswer(answer, known)}</div>${sourcesRow(citations)}`
+    ? `<div class="c-msg__body">${renderAnswer(answer, known)}</div>${sourcesRow(citations)}${ENGINE_NOTE[engine] ? `<p class="c-meta">${ENGINE_NOTE[engine]}</p>` : ""}`
     : fallbackCard();
-  el.innerHTML = `<p class="sr-only">Answer:</p>${body}${debugTable(retrieved, citations)}${actions(answerable)}`;
+  const note = rewrite ? `<p class="c-meta">Follow-up understood as: <em>${escapeHtml(rewrite)}</em></p>` : "";
+  el.innerHTML = `<p class="sr-only">Answer:</p>${note}${body}${debugTable(retrieved, citations)}${actions(answerable)}`;
 }
 
 function addAssistant(q) {
@@ -164,6 +170,7 @@ export async function ask(text) {
   let finished = false;
   let citations = [];
   let retrieved = [];
+  let rewrite = "";
   const live = () => el.querySelector('[data-js="live"]');
   try {
     await askStream(
@@ -179,11 +186,12 @@ export async function ask(text) {
             body.textContent = streamed;
             scrollDown();
           },
+          rewrite: (d) => { rewrite = d.search_query; },
           citations: (d) => { citations = d.citations; retrieved = d.retrieved; },
           done: (d) => {
             finished = true;
             el.removeAttribute("aria-busy");
-            renderAssistant(el, { answer: d.answer, answerable: d.answerable, citations, retrieved });
+            renderAssistant(el, { answer: d.answer, answerable: d.answerable, citations, retrieved, engine: d.engine, rewrite });
             const isNew = state.conversationId !== d.conversation_id;
             state.conversationId = d.conversation_id;
             if (isNew) emit("conversations-changed");

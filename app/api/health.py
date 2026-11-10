@@ -19,10 +19,17 @@ def health(c: Container = Depends(get_container)) -> HealthResponse:
         db_ok = True
     except Exception:
         db_ok = False
-    ok = db_ok and c.models_loaded
+    redis_ok: bool | None = None
+    if c.redis is not None:
+        try:
+            redis_ok = bool(c.redis.ping())
+        except Exception:
+            redis_ok = False
+    ok = db_ok and c.models_loaded and redis_ok is not False
     return HealthResponse(
         status="ok" if ok else "degraded",
         database=db_ok,
+        redis=redis_ok,
         models_loaded=c.models_loaded,
         llm_configured=c.server_llm is not None or c.local is not None,
         llm_provider=c.settings.llm_provider,

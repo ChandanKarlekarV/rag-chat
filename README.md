@@ -1,8 +1,13 @@
-# rag-chat
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/wordmark-dark.svg">
+    <img src="assets/brand/wordmark-light.svg" alt="rag-chat" width="300">
+  </picture>
+</p>
 
-**Chat with your PDFs. Answers stream in with clickable `[1][2]` citations to the exact page, and when the documents don't contain the answer, it says so instead of guessing.**
+<p align="center"><strong>Chat with your PDFs. Every answer links to the exact page it came from, and when the documents don't contain the answer, it says so instead of guessing. Works with no API key.</strong></p>
 
-<!-- DEMO GIF PLACEHOLDER: record "Try it with a sample PDF" → click a sample question → click a [1] chip → toggle "Show retrieval scores", save as docs/demo.gif, and replace this comment with: ![demo](docs/demo.gif) -->
+<!-- DEMO GIF PLACEHOLDER: record "Try it with a sample PDF" → click a sample question → click a [1] chip → ask a follow-up → toggle "Show retrieval scores", save as docs/demo.gif, and replace this comment with: ![demo](docs/demo.gif) -->
 > 📽️ *Demo GIF goes here (`docs/demo.gif`).*
 
 ```bash
@@ -14,108 +19,168 @@ docker compose up --build      # → http://localhost:8000, click "Try it with a
 
 ## Features
 
-- **Sign in or try as a guest.** Email + password accounts (argon2id, httpOnly cookie sessions), or one click into a guest account that already has a sample PDF indexed. Guest data is deleted after 24 hours.
-- **Upload with visible progress:** Reading → Splitting → Understanding → Ready, with friendly errors for non-PDFs, files over 20 MB, scanned PDFs without text, and duplicates.
-- **Hybrid retrieval:** dense vectors (`bge-small-en-v1.5`, Chroma) plus BM25 keywords, merged with Reciprocal Rank Fusion, then reranked by a cross-encoder.
-- **Grounded, cited, streamed answers** over Server-Sent Events. Inline `[n]` chips open a source drawer with the file, page range and the passage, with your question's words emphasized.
-- **Two-layer "I couldn't find this":** a relevance gate refuses off-topic questions *without calling the LLM*, and the prompt makes the model reply `NO_ANSWER` when the sources aren't enough.
+- **Answers on its own, no API key needed.** A built-in extractive question-answering model (`deepset/deberta-v3-large-squad2`) reads the retrieved passages and quotes the exact sentence that answers the question, with the answer in bold and a page citation. Because it quotes rather than writes, it can't put words in the document's mouth. It is also trained to say "no answer", and it does when it isn't confident.
+- **Or bring your own Claude key.** Paste an Anthropic key in **Settings** for written, summarised answers. The key is tested instantly (free Models API call), kept only in your browser, sent with each question and never stored or logged by the server. Remove it to go back to the built-in model.
+- **Follow-up questions just work.** "How long is the warranty?" → "Can it be transferred?" is turned into a standalone search, by Claude when a key is set or by a keyword heuristic otherwise. The UI shows what it searched for.
+- **Hybrid retrieval:** dense vectors (`bge-small-en-v1.5`, Chroma) plus BM25+ keywords, merged with Reciprocal Rank Fusion, then reranked by a cross-encoder.
+- **Two-layer "I couldn't find this":** a relevance gate refuses off-topic questions before any model runs. Then either the local model's confidence and answer-type checks, or Claude's `NO_ANSWER` rule, catch the near misses.
+- **Sign in or try as a guest:** email and password (argon2id, httpOnly cookie sessions), or one click into a guest account with a sample PDF already indexed. Guest data is deleted after 24 hours.
+- **Visible upload progress** (Reading → Splitting → Understanding → Ready), friendly errors, retry for failed files, and per-user duplicate detection.
 - **Per-user isolation:** every vector and keyword search is filtered by user, and this is covered by tests.
-- **Conversation history** with rename and delete; scope questions to selected documents ("Searching 2 of 3 documents").
-- **Bring your own API key:** each user pastes an Anthropic key in Settings, it's tested instantly (free Models API call), and it's never stored on the server. An optional offline mode (`LLM_PROVIDER=fake`) answers extractively with no key at all.
+- **Conversation history** with rename and delete; scope questions to selected documents.
 - **Transparent retrieval:** a debug switch shows vector, BM25, RRF and rerank scores for every source.
-- **Design system:** warm-paper and teal tokens, light and dark themes, WCAG AA contrast checked by a script, keyboard shortcuts, visible focus, reduced motion respected, usable at 360 px. See [`/static/styleguide.html`](app/static/styleguide.html).
-- **Measured, not claimed:** `scripts/evaluate.py` compares vector-only, hybrid and hybrid + rerank on a labelled question set.
+- **Scales out:** Alembic migrations, Postgres, and Redis-backed rate limits, upload progress and locks, plus a Chroma server for running several workers (`docker-compose.scale.yml`).
+- **Design system:** warm-paper and teal tokens, light and dark themes, WCAG AA contrast checked by a script, keyboard shortcuts, reduced motion respected, usable at 360 px. See [`/static/styleguide.html`](app/static/styleguide.html).
+- **Measured, not claimed:** `scripts/evaluate.py` (free, no key) and `scripts/judge.py` (LLM-as-judge, needs a key).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    B["Browser<br/>HTML + vanilla JS + Tailwind CDN<br/>httpOnly session cookie"] -- "JSON / SSE" --> API
+    B["Browser<br/>HTML + vanilla JS + Tailwind CDN<br/>httpOnly session cookie<br/>optional Claude key (browser only)"] -- "JSON / SSE" --> API
 
-    subgraph FastAPI["FastAPI app (one container)"]
+    subgraph FastAPI["FastAPI app (1..N workers)"]
         API["api/<br/>auth · documents · chat · health"] --> SVC["services/<br/>auth · ingest · retrieval · chat"]
         SVC --> ING["ingest/<br/>load · clean · chunk"]
-        SVC --> RET["retrieval/<br/>embed · vector · BM25 · RRF · rerank"]
-        SVC --> GEN["generation/<br/>prompt · LLMClient"]
-        SVC --> DB["db/<br/>SQLAlchemy models · repositories"]
+        SVC --> RET["retrieval/<br/>embed · vector · BM25+ · RRF · rerank"]
+        SVC --> GEN["generation/<br/>rewrite · answerer (local reader | Claude)"]
+        SVC --> DB["db/<br/>SQLAlchemy · Alembic"]
     end
 
-    DB --> SQL[("SQLite<br/>users · documents<br/>conversations · messages")]
-    RET --> CH[("ChromaDB<br/>vectors + user_id metadata")]
-    RET --> BM[("BM25 index<br/>one pickle per user")]
-    RET --> ML["Local models<br/>bge-small · MiniLM cross-encoder"]
-    GEN --> LLM["Anthropic API<br/>(only question + top 5 chunks leave the box)"]
+    DB --> SQL[("SQLite or Postgres")]
+    RET --> CH[("Chroma<br/>embedded or server")]
+    RET --> BM[("BM25 index<br/>one file per user")]
+    SVC --> RD[("Redis (optional)<br/>rate limits · progress · locks")]
+    GEN --> LM["Local models<br/>bge-small · MiniLM reranker · DeBERTa-v3 reader"]
+    GEN -. "only with a key: question + top 5 passages" .-> LLM["Anthropic API"]
 ```
 
-**Layering rule:** `api → services → (ingest | retrieval | generation | db)`. Lower layers never import upper ones, and services never import FastAPI. That's what lets tests swap in fake models and a `FakeLLM`.
+**Layering rule:** `api → services → (ingest | retrieval | generation | db)`. Lower layers never import upper ones, and services never import FastAPI.
 
-**Ask flow:** question → embed (bge query prefix) → vector top 20 + BM25 top 20, both filtered by `user_id` → RRF (k = 60) → cross-encoder rerank → top 5 → **gate** (best rerank score < `MIN_RERANK_SCORE` → "couldn't find this", no LLM call) → numbered-sources prompt → stream tokens → parse `[n]` → `citations` event → persist → `done`.
-
-**Ingest flow:** upload → validate (`%PDF` magic bytes, size, per-user SHA-256 dedupe, quota) → row `processing` → background task: extract → clean → chunk (800/150, page ranges) → embed in batches → Chroma → rebuild that user's BM25 → row `ready`. The UI polls `/documents/{id}/status`.
+**Ask flow:**
+1. Follow-up? Rewrite it into a standalone query.
+2. Embed the query (with bge's query prefix).
+3. Search vectors (top 20) and BM25 (top 20), both filtered by `user_id`.
+4. Merge with RRF (k = 60), then rerank with the cross-encoder and keep the top 5.
+5. **Gate:** if the best rerank score is below `MIN_RERANK_SCORE`, answer "couldn't find this".
+6. Answer with an engine:
+   - **Local reader:** for each passage, take the best span and score it as model confidence + rerank weighting. Check the answer type, then quote the sentence. If not confident, return `NO_ANSWER`.
+   - **Claude:** a numbered-sources prompt, with a reply of exactly `NO_ANSWER` when the sources aren't enough.
+7. Stream tokens → `citations` event → persist → `done`.
 
 ## Evaluation
 
 The corpus is two original manuals written for this project and generated by `scripts/make_sample_pdf.py`:
 - a 10-page home-battery handbook;
-- an 8-page EV-charger guide, a deliberate **hard distractor** that covers the same topics (Wi-Fi, warranty, status lights, the same error code `E-214`).
+- an 8-page EV-charger guide, a deliberate **hard distractor** that covers the same topics (Wi-Fi, warranty, status lights, even the same error code `E-214`).
 
-`tests/eval_set.json` has **30 answerable questions** labelled with the expected document and page, plus **8 unanswerable** ones. Most questions are paraphrased rather than copied from the text.
+A question counts as answered correctly only if the reply contains the expected fact **and** cites the expected page.
 
 ```bash
-python scripts/evaluate.py          # the table below
-python scripts/evaluate.py --sweep  # + per-question rerank scores and a threshold sweep
+python scripts/evaluate.py          # all tables below (free, deterministic, no API key)
+python scripts/evaluate.py --sweep  # + per-question scores and threshold sweeps
+python scripts/evaluate.py --eval-set tests/heldout_set.json
 ```
 
-Measured output (28 chunks, laptop CPU, `MIN_RERANK_SCORE=-5.0`):
+### Development set (`tests/eval_set.json`: 30 answerable, 8 unanswerable, 10 follow-ups)
 
 | Config | Hit@1 | Hit@5 | MRR | Fallback accuracy | Latency / query (CPU) |
 |---|---|---|---|---|---|
-| Vector only | 0.80 | 0.97 | 0.88 | n/a | 9 ms |
-| Hybrid (RRF) | 0.93 | 1.00 | 0.95 | n/a | 10 ms |
-| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 145 ms |
+| Vector only | 0.80 | 0.97 | 0.88 | n/a | 10 ms |
+| Hybrid (RRF) | 0.93 | 1.00 | 0.95 | n/a | 11 ms |
+| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 139 ms |
 
-- **Hit@k**: the expected (document, page) is within a top-k chunk's page range. **MRR**: mean of 1/rank of the first such chunk.
-- **Fallback accuracy**: share of all 38 questions where the gate makes the right call (unanswerable → refused, answerable → sent to the LLM). It applies only to the rerank config, because the gate thresholds the rerank score. At -5.0, all 30 answerable questions pass and 3 of 8 unanswerable ones are refused outright. The other 5 (e.g. "How much does the H2 cost?") look on-topic to the reranker, so they are left to the LLM's `NO_ANSWER` rule.
-- **Latency** is retrieval only (embedding, search, rerank).
+End-to-end answers with the **built-in model, no API key**:
 
-**Caveats:** the corpus is small and synthetic, I wrote both the documents and the questions, and the threshold was tuned on the same set. Read the numbers as the *relative* gain of each stage, not as a benchmark. The evaluation never calls the LLM, so the `NO_ANSWER` layer and answer faithfulness are not measured here.
+| Answerable: correct fact + page | Answered wrongly | Refused but answerable | Unanswerable: correctly refused | Overall accuracy | Latency / question (CPU) |
+|---|---|---|---|---|---|
+| 30/30 (100%) | 0 | 0 | 8/8 | 100% | 1489 ms |
+
+| Follow-ups | Hit@5 | Answer correct (fact + page) |
+|---|---|---|
+| Follow-up as typed | 1.00 | 0.70 |
+| With query rewriting | 1.00 | 1.00 |
+
+The result is the same at every reader threshold from −6 to +4, so it isn't balanced on a single tuned value.
+
+### Held-out set (`tests/heldout_set.json`: 14 answerable, 4 unanswerable)
+
+These questions were written **after** every model and threshold choice was made, and run once:
+
+| Answerable: correct fact + page | Answered wrongly | Refused but answerable | Unanswerable: correctly refused | Overall accuracy |
+|---|---|---|---|---|
+| 13/14 (93%) | 1 | 0 | 4/4 | 94% |
+
+The one miss: "Which safety standards does the H2 comply with?" was answered with the enclosure's IP56 rating from a lower-ranked passage. The right passage was ranked first, but the reader preferred a confident span elsewhere.
+
+### How the built-in model was chosen (development set, identical final pipeline, `READER_MODEL=…`)
+
+| Reader model | Parameters | Answerable correct | Unanswerable refused | Overall | Latency / question (CPU) |
+|---|---|---|---|---|---|
+| `deepset/roberta-base-squad2` | 125M | 27/30 | 7/8 | 89% | 410 ms |
+| `deepset/deberta-v3-base-squad2` | 184M | 26/30 | 8/8 | 89% | 481 ms |
+| **`deepset/deberta-v3-large-squad2`** (default) | 435M | **30/30** | **8/8** | **100%** | 1489 ms |
+
+Latency covers the whole pipeline (retrieval, rerank and reader).
+
+**Read this honestly:** the corpus is small and synthetic, and I wrote the documents and questions. Several design choices (model, rerank weighting, answer-type check, yes/no rule) were made while looking at the development set, which is why the held-out number is the one to trust. **No system is 100% accurate on every PDF.** What this design guarantees is narrower and more useful:
+- the built-in model only ever **quotes your document verbatim**, with a link to the page so you can check;
+- it **declines** when it isn't confident instead of inventing an answer.
+
+### LLM-as-judge (needs a key)
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... python scripts/judge.py --answerer local    # grade the built-in model
+ANTHROPIC_API_KEY=sk-ant-... python scripts/judge.py --answerer claude   # grade Claude's written answers
+```
+
+It runs the full pipeline, then a judge model (default `claude-opus-5-5`) grades each reply. It reports **correctness** against the reference facts, **faithfulness** (every claim supported by the cited passages) and **refusal accuracy**, i.e. how often "I couldn't find this" is the right call. It makes paid API calls; `--limit N` tries it on a few questions first. *Not run for this README: no API key was available on the build machine.*
 
 ## Design decisions
 
 | # | Decision | Why |
 |---|---|---|
-| 1 | **Hybrid + rerank over vector-only** | Measured above. Vectors handle paraphrases ("power during blackouts" → *Backup Only mode*); BM25 nails exact tokens (`E-214`, `HB-WM2`, port `502`). The cross-encoder reads question and passage together and fixes the remaining ordering errors. |
-| 2 | **Local embeddings (`bge-small-en-v1.5`)** | Privacy and zero cost: documents never leave the machine for embedding. 384 dimensions, fast on CPU, strong for its size. The bge query prefix is added to queries only. |
-| 3 | **SQLite + Chroma** | Zero ops for a single container. SQLAlchemy 2.0 means Postgres is a one-line `DATABASE_URL` change. |
-| 4 | **httpOnly cookie over a localStorage JWT** | Scripts (including XSS) can't read the session. SameSite=Lax plus a required `X-Requested-With: fetch` header on every state-changing request blocks CSRF; no CORS is enabled. |
-| 5 | **Threshold before the LLM** | Cheaper and more reliable than prompt-only refusal. -5.0 is the highest value in the `--sweep` that refused **no** answerable question. A wrong refusal can't be recovered, but a wrong pass is still caught by `NO_ANSWER`. |
-| 6 | **No JS framework** | No build step; a reviewer can read `app/static/js/` in minutes. ES modules: `api`, `state`, `ui`, `chat`, `app`. |
-| 7 | **800-character chunks, 150 overlap** | About 150–200 tokens: one fact plus its context. The overlap is made of whole trailing sentences, so facts on a boundary stay intact. Chunks may cross pages and record `page_start`/`page_end`. |
-| 8 | **RRF, k = 60** | Merges by rank, so there's no need to normalize two incomparable score scales or tune weights. 60 is the standard value. |
+| 1 | **Hybrid + rerank over vector-only** | Measured above (Hit@1 0.80 → 1.00). Vectors handle paraphrases; BM25 nails exact tokens (`E-214`, `HB-WM2`, port `502`); the cross-encoder fixes ordering. |
+| 2 | **Local embeddings and a local answer model** | Privacy and zero cost. With no key, nothing leaves the machine. With a key, only the question and the top 5 passages go to Anthropic. |
+| 3 | **Extractive reader rather than a small local generative model** | An extractive model can only return text that's in the PDF, which is the strongest accuracy guarantee available without an LLM. It's trained on SQuAD 2.0, which includes unanswerable questions, so "no answer" is a first-class output. A small generative model would write fluent text and hallucinate more. Answers are less polished than Claude's; that trade-off is the point of making Claude optional. |
+| 4 | **No "training" on your PDFs** | RAG doesn't need it: the model is pretrained to find answers in any text, and retrieval supplies the right text. Fine-tuning on a few PDFs would overfit. What is tuned is the thresholds, by measurement. |
+| 5 | **Rerank weighting + answer-type check + yes/no rule** | Each fixes a measured failure. Weighting by rerank score stopped "red light on the *battery*" being answered from the *charger* manual. The type check makes price questions require money and "how many" require a number, which stopped "cost?" being answered with the weight. Yes/no questions also quote the next sentence, where qualifiers like "not suitable" usually are. |
+| 6 | **SQLite + Chroma by default, Postgres/Redis/Chroma server when scaling** | Zero ops for one container; the same code runs multi-worker by setting three URLs. |
+| 7 | **httpOnly cookie over a localStorage JWT** | Scripts (including XSS) can't read the session. SameSite=Lax plus a required `X-Requested-With: fetch` header blocks CSRF; no CORS is enabled. |
+| 8 | **Threshold before any model** | Cheaper and more reliable than relying on refusal alone. -5.0 is the highest gate value that refused no answerable development question. |
+| 9 | **800/150 character chunks, RRF k = 60** | One fact plus its context per chunk; whole-sentence overlap; RRF needs no score normalization. |
+| 10 | **No JS framework** | No build step; `app/static/js/` reads in minutes. |
 
-### Choices made where the documents were ambiguous or conflicted
+### Choices made along the way (and experiments that lost)
 
-- **BM25+ instead of BM25Okapi.** Per-user indexes can be tiny, and Okapi's IDF goes negative when a term is in most chunks. A single-chunk document scored below zero and was never returned (a test caught it). `rank_bm25`'s BM25+ keeps IDF positive. Because its BM25+ adds the same offset to every chunk, `search` only returns chunks that contain a query term. This also lifted hybrid Hit@1 from 0.87 to 0.93.
-- **Users bring their own API key** (an explicit owner request after the plan was written). The key lives in the browser (session storage, or local storage if "Remember" is ticked), travels in an `X-Anthropic-Api-Key` header, and is used for that request only. The server never stores or logs it. `ANTHROPIC_API_KEY` in `.env` is an optional shared fallback. Because modals are reserved for destructive confirms, the key form lives in the **Settings** drawer.
-- **Offline provider** (`LLM_PROVIDER=fake`): the same `FakeLLM` the tests use, made extractive (it picks the sentences of source 1 that best match the question), so the full UI works with no key. The architecture lists `FakeLLM` for "tests/offline".
-- **Ingest stages** are tracked in memory per document; `documents.status` stays `processing | ready | failed` as specified. A restart loses the percentage, not the status.
-- **Extra modules:** `app/errors.py` (domain errors mapped to `{"error": {"code", "message"}}`), `app/logging_setup.py` (JSON logs with a request id), `app/services/container.py` (wires everything once), `app/services/rate_limit.py`, and `app/generation/factory.py`.
-- **`POST /llm/check`** (not in the API table) backs the Settings "Save and test" button and the status dot.
-- **Contrast fixes.** `scripts/check_contrast.py` failed three light-theme pairs, so token values were adjusted rather than the rule: accent `#B45309 → #A14A07` and success `#2F7D4F → #286B44`. A `--color-border-input` token was added because the decorative border tokens can't meet WCAG 1.4.11's 3:1 for input outlines. Dark `success-subtle` and `danger-subtle` weren't specified, so they were defined.
-- **`requirements.lock`** is resolved for the container target (CPython 3.11, Linux) by `scripts/lock.py`. A plain `pip freeze` from the dev machine (Python 3.12) pinned `networkx==3.7`, which doesn't install on 3.11.
-- **Docker runs as root** so the `./data` bind mount is writable on Linux hosts, where Docker creates it root-owned.
-- **Conversation-aware query rewriting** (optional in the architecture) is not implemented; each question is retrieved on its own.
+- **Plain-text extraction beat block extraction.** Splitting pages into layout blocks keeps headings separate, but it scored lower: rerank Hit@1 fell to 0.97, and answers 29/30 instead of 30/30. A heading running into its first sentence gives the chunk useful topic context. So the loader keeps `get_text("text")`.
+- **BM25+ instead of BM25Okapi:** Okapi's IDF goes negative on tiny per-user corpora (a test caught a one-chunk document scoring below zero). BM25+ keeps it positive, and only chunks containing a query term are returned.
+- **Follow-up rewriting without a key** is a heuristic: when a question leans on context (pronouns, "and…", "what about…", very short), the previous question's key terms are added to the *search* query only. Measured: follow-up answers go from 0.70 to 1.00.
+- **Auto engine selection** (`LLM_PROVIDER=auto`): the user's key → Claude; else the server's key → Claude; else the built-in model. `local` and `anthropic` force one engine.
+- **Multi-worker correctness:** per-user BM25 files are written atomically and reloaded when another worker changes them (mtime check). Index rebuilds take a per-user Redis lock. Embedded Chroma is single-process, so multi-worker mode requires `CHROMA_URL`; Compose runs the Chroma server from the same image, so client and server versions always match.
+- **Migrations:** startup runs `alembic upgrade head`. Databases created by earlier versions (tables but no `alembic_version`) are stamped rather than recreated, so data is kept; tested.
+- **Contrast fixes:** token values were adjusted (not the rule) where `check_contrast.py` failed, and a `--color-border-input` token meets WCAG 1.4.11.
+- **`requirements.lock`** is resolved for the container target (CPython 3.11, Linux) by `scripts/lock.py`. A dev-machine `pip freeze` (Python 3.12) pinned packages that don't install on 3.11.
+- **Logo:** an original mark (a document with a "verified answer" bubble) in the design tokens' teal and amber, flat. The in-app version is an inline SVG coloured by tokens, so it follows the theme. Standalone files are in `assets/brand/`.
 
 ## Run it
 
-### Docker
+### Docker (one container)
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Open http://localhost:8000 and click **Try it with a sample PDF**, or create an account. For written answers, open **Settings** and paste your Anthropic API key (a green dot means it works). For a public deployment, set `APP_ENV=prod` and a random `SECRET_KEY`; the app refuses to start with a placeholder. Serve it over HTTPS.
+Open http://localhost:8000 → **Try it with a sample PDF**, or create an account. It answers immediately with the built-in model. For Claude answers, open **Settings** and paste your key. The image bakes in all models (about 2.5 GB in total), so later starts work offline. For a public deployment set `APP_ENV=prod` and a random `SECRET_KEY` (the app refuses to start with a placeholder), and serve it over HTTPS.
+
+### Docker (multi-server: Postgres + Redis + Chroma server + 2 workers)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.scale.yml up --build
+```
+
+Each worker loads the models (about 2.5 GB RAM each with the large reader). Set `WEB_CONCURRENCY` to fit your RAM, or `READER_MODEL=deepset/deberta-v3-base-squad2` for a lighter worker.
 
 ### Local development
 
@@ -129,19 +194,30 @@ cp .env.example .env
 uvicorn app.main:app --reload        # http://localhost:8000, API docs at /docs
 ```
 
-Offline demo with no key: `LLM_PROVIDER=fake uvicorn app.main:app`.
+The first start downloads the models from Hugging Face.
 
 ### Checks
 
 ```bash
 ruff check . && ruff format --check .
-pytest -W error::DeprecationWarning       # 48 tests: unit, integration, isolation
+pytest -W error::DeprecationWarning       # unit + integration + isolation + backends
 python scripts/check_contrast.py          # WCAG AA for every token pair, both themes
-python scripts/evaluate.py                # retrieval comparison table
+python scripts/evaluate.py                # retrieval, answer accuracy, follow-ups
 grep -rni gradient app/static             # must print nothing
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, contrast, the no-gradient check and the tests on every push.
+Backend tests use `fakeredis` by default. Set `TEST_REDIS_URL`, `TEST_DATABASE_URL` and `TEST_CHROMA_URL` to run them against real servers; CI does this for Postgres and Redis.
+
+### Publishing to GitHub
+
+`.env`, `data/` and `.venv/` are git-ignored, so no key or user data is committed. To publish:
+
+```bash
+git remote add origin https://github.com/<you>/rag-chat.git
+git push -u origin master
+```
+
+CI then runs lint, contrast, the no-gradient check, migrations, and the tests against real Postgres and Redis.
 
 ## API
 
@@ -152,43 +228,49 @@ CI (`.github/workflows/ci.yml`) runs lint, contrast, the no-gradient check and t
 | POST | `/documents` | upload a PDF (multipart) → `202` with `status: processing` |
 | GET | `/documents` | the user's documents |
 | GET | `/documents/{id}/status` | `{status, stage, progress, error}` |
+| POST | `/documents/{id}/retry` | re-run ingest for a failed document |
 | DELETE | `/documents/{id}` | removes the row, chunks, BM25 entries and file |
-| POST | `/chat/ask` | SSE: `token`*, `citations`, `done` (or `error`) |
+| POST | `/chat/ask` | SSE: `rewrite`?, `token`*, `citations`, `done {answer, answerable, engine, …}` (or `error`) |
 | GET / PATCH / DELETE | `/conversations`, `/conversations/{id}` | history, rename, delete |
-| POST | `/llm/check` | does the browser's (or server's) key work? |
-| GET | `/health` | database and model status |
+| POST | `/llm/check` | which engine will answer, and does it work? |
+| GET | `/health` | database, Redis and model status |
 
-Every error has the shape `{"error": {"code": "...", "message": "human readable"}}`. Other users' resources return **404**. State-changing requests need `X-Requested-With: fetch`. Rate limits: 5/min/IP on `/auth/*` and 20/min/user on `/chat/ask`.
+Every error has the shape `{"error": {"code": "...", "message": "human readable"}}`. Other users' resources return **404**. State-changing requests need `X-Requested-With: fetch`. The optional `X-Anthropic-Api-Key` header selects Claude for that request.
 
 ## Project structure
 
 ```
 app/
   api/          auth.py documents.py chat.py health.py deps.py
-  services/     auth_service.py ingest_service.py retrieval_service.py chat_service.py container.py rate_limit.py
+  services/     auth_service.py ingest_service.py retrieval_service.py chat_service.py
+                container.py rate_limit.py coordination.py
   ingest/       loader.py cleaner.py chunker.py
   retrieval/    embedder.py vector_store.py bm25_store.py hybrid.py reranker.py
-  generation/   prompt.py llm_base.py llm_anthropic.py llm_fake.py factory.py
+  generation/   answerer.py reader.py rewrite.py prompt.py llm_base.py llm_anthropic.py llm_fake.py factory.py
   db/           models.py session.py repositories.py
   static/       index.html styleguide.html css/{tokens,components}.css js/{api,state,ui,chat,app}.js
-  main.py config.py schemas.py errors.py logging_setup.py
-tests/          test_chunker.py test_retrieval.py test_api.py conftest.py fakes.py eval_set.json
-scripts/        evaluate.py check_contrast.py make_sample_pdf.py lock.py
+migrations/     Alembic env + versions
+assets/brand/   logo and wordmarks
+tests/          unit, API, backends, eval_set.json, heldout_set.json
+scripts/        evaluate.py judge.py check_contrast.py make_sample_pdf.py lock.py
 ```
 
 ## Limitations
 
-- **Scanned PDFs are rejected** (no OCR). Tables and multi-column layouts are flattened to plain text.
-- **Single process:** rate limits and ingest progress are in memory, so they reset on restart and aren't shared across workers.
-- **English models:** bge-small-en and the MiniLM reranker are English-only.
-- **The rerank threshold is corpus-dependent:** re-run `evaluate.py --sweep` on your own labelled questions.
-- **No query rewriting:** follow-up questions like "and the charger?" are not made standalone.
-- **chromadb 1.5.9 has open advisories:** `pip-audit` reports PYSEC-2026-311, -3813, -3814 and -3815, with no fixed release listed at the time of writing. Chroma runs embedded here (no Chroma server port is exposed), but upgrade as soon as a fix ships.
-- **Tailwind's Play CDN** is documented as "for development purposes only". Tailwind is used only for layout utilities here; all visual styling is in the token-based CSS.
+- **Accuracy depends on the document:** the built-in model quotes one passage. Questions that need combining facts from several places, or reading tables, get partial answers; Claude handles those better.
+- **Scanned PDFs are rejected** (no OCR); tables and multi-column layouts are flattened to text.
+- **English-only models** (bge-small-en, MiniLM reranker, DeBERTa reader).
+- **CPU latency:** about 1.5 s per question for the large reader on a laptop CPU; use the base reader for speed.
+- **chromadb 1.5.9 has open advisories** (`pip-audit`: PYSEC-2026-311, -3813, -3814, -3815; no fixed release listed yet). Upgrade when one ships.
+- **Tailwind's Play CDN** is documented as development-only; it is used only for layout utilities.
+
+## Credits
+
+- Built-in answer model: [`deepset/deberta-v3-large-squad2`](https://huggingface.co/deepset/deberta-v3-large-squad2) by deepset, licensed **CC BY 4.0**.
+- Embeddings: `BAAI/bge-small-en-v1.5`. Reranker: `cross-encoder/ms-marco-MiniLM-L-6-v2`.
 
 ## Future work
 
-1. Conversation-aware query rewriting for follow-ups, with tests.
-2. End-to-end answer evaluation (faithfulness, citation precision, `NO_ANSWER` accuracy) with an LLM judge.
-3. Alembic migrations, Postgres, and Redis-backed rate limits/progress for multi-worker deploys.
-4. OCR fallback for scanned pages; an in-app PDF viewer that jumps to the cited page.
+1. Multi-passage answers for the built-in model (combine spans from several sources).
+2. Run `scripts/judge.py` regularly and add its numbers here.
+3. OCR fallback for scanned pages; an in-app PDF viewer that jumps to the cited sentence.

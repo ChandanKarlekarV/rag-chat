@@ -1,5 +1,6 @@
 """Per-user BM25 keyword indexes, persisted as one pickle per user and cached in memory."""
 
+import os
 import pickle
 import re
 import threading
@@ -85,6 +86,7 @@ class BM25Store:
         self._dir = directory
         directory.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, _Index] = {}
+        self._mtimes: dict[str, int | None] = {}
         self._lock = threading.Lock()
 
     def _path(self, user_id: str) -> Path:
@@ -93,29 +95,42 @@ class BM25Store:
         return self._dir / f"{user_id}.pkl"
 
     def _index(self, user_id: str) -> _Index:
+        """The user's index, reloaded if another worker rewrote the file since we cached it."""
+        path = self._path(user_id)
+        try:
+            mtime = path.stat().st_mtime_ns
+        except FileNotFoundError:
+            mtime = None
         with self._lock:
-            if user_id not in self._cache:
-                path = self._path(user_id)
-                if path.exists():
-                    with path.open("rb") as fh:
-                        state = pickle.load(fh)
-                    self._cache[user_id] = _Index.build(state["chunk_ids"], state["doc_ids"], state["corpus_tokens"])
-                else:
-                    self._cache[user_id] = _Index.build([], [], [])
-            return self._cache[user_id]
+            cached = self._cache.get(user_id)
+            if cached is not None and self._mtimes.get(user_id) == mtime:
+                return cached
+            if mtime is None:
+                idx = _Index.build([], [], [])
+            else:
+                with path.open("rb") as fh:
+                    state = pickle.load(fh)
+                idx = _Index.build(state["chunk_ids"], state["doc_ids"], state["corpus_tokens"])
+            self._cache[user_id], self._mtimes[user_id] = idx, mtime
+            return idx
 
     def rebuild(self, user_id: str, chunks: list[Chunk]) -> None:
-        """Rebuild a user's index from scratch and persist it."""
+        """Rebuild a user's index from scratch and persist it atomically (write temp, then rename)."""
         ids, docs, tokens = [c.chunk_id for c in chunks], [c.doc_id for c in chunks], [tokenize(c.text) for c in chunks]
-        with self._path(user_id).open("wb") as fh:
+        path = self._path(user_id)
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        with tmp.open("wb") as fh:
             pickle.dump({"chunk_ids": ids, "doc_ids": docs, "corpus_tokens": tokens}, fh)
+        os.replace(tmp, path)
         with self._lock:
             self._cache[user_id] = _Index.build(ids, docs, tokens)
+            self._mtimes[user_id] = path.stat().st_mtime_ns
 
     def delete_user(self, user_id: str) -> None:
         """Forget a user's index."""
         with self._lock:
             self._cache.pop(user_id, None)
+            self._mtimes.pop(user_id, None)
         self._path(user_id).unlink(missing_ok=True)
 
     def search(self, user_id: str, query: str, k: int, doc_ids: list[str] | None = None) -> list[tuple[str, float]]:

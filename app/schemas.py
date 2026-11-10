@@ -165,6 +165,7 @@ class HealthResponse(BaseModel):
 
     status: Literal["ok", "degraded"]
     database: bool
+    redis: bool | None = None  # None when Redis isn't configured
     models_loaded: bool
     llm_configured: bool  # True when the server has its own key (or the fake provider)
     llm_provider: str

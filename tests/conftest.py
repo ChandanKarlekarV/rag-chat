@@ -35,7 +35,9 @@ class Harness:
         return TestClient(self.client.app)
 
 
-def make_harness(tmp_path: Path, sample_pdf: Path, server_key: str = "", **overrides) -> Iterator[Harness]:
+def make_harness(
+    tmp_path: Path, sample_pdf: Path, server_key: str = "", redis_client: object = None, **overrides
+) -> Iterator[Harness]:
     overrides.setdefault("llm_provider", "anthropic")
     overrides.setdefault("reader_min_score", 0.0)
     settings = Settings(
@@ -60,6 +62,7 @@ def make_harness(tmp_path: Path, sample_pdf: Path, server_key: str = "", **overr
         llm_factory=factory,
         reader=FakeReader(),
         sample_pdf=sample_pdf,
+        redis_client=redis_client,
     )
     with TestClient(create_app(container)) as client:
         yield Harness(client, made)

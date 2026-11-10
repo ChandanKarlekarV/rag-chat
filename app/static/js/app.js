@@ -484,16 +484,20 @@ function renderLlm(r) {
   const badgeEl = js("key-badge");
   const notice = js("key-notice");
   dot.className = "c-dot";
-  if (!r) { status.textContent = "Checking Claude…"; return; }
+  if (!r) { status.textContent = "Checking the answer engine…"; return; }
+  const hasKey = Boolean(getApiKey());
   if (r.ok) {
     dot.classList.add("c-dot--ok");
-    status.textContent = r.provider === "fake" ? "Offline demo model" : r.source === "browser" ? "Claude connected · your key" : "Claude connected · server key";
-    badgeEl.className = "c-badge c-badge--ready";
-    badgeEl.innerHTML = `${icon("check")}Working`;
+    status.textContent = {
+      local: "Built-in model · no key needed",
+      fake: "Offline demo model",
+    }[r.provider] || (r.source === "browser" ? "Claude · your key" : "Claude · server key");
+    badgeEl.className = `c-badge ${r.source === "browser" ? "c-badge--ready" : "c-badge--neutral"}`;
+    badgeEl.innerHTML = r.source === "browser" ? `${icon("check")}Working` : "Optional";
     notice.hidden = true;
   } else {
     dot.classList.add(r.source === "none" ? "c-dot--warn" : "c-dot--bad");
-    status.textContent = r.source === "none" ? "No API key yet" : "API key not working";
+    status.textContent = r.source === "none" ? "No answer engine" : "API key not working";
     badgeEl.className = `c-badge ${r.source === "none" ? "c-badge--neutral" : "c-badge--failed"}`;
     badgeEl.innerHTML = r.source === "none" ? "Not set" : `${icon("alert")}Not working`;
     js("key-notice-text").textContent = r.source === "none"
@@ -502,8 +506,12 @@ function renderLlm(r) {
     js("key-notice-btn").textContent = r.source === "none" ? "Add API key" : "Fix API key";
     notice.hidden = false;
   }
+  js("engine-line").textContent = r && r.ok && r.provider === "local"
+    ? "Answering now: the built-in model, which quotes the exact sentence from your PDF. Add a key to get written, summarised answers from Claude instead."
+    : r && r.ok && r.source === "browser"
+      ? "Answering now: Claude, with your key. Remove the key to go back to the built-in model."
+      : hasKey ? "" : "No key: answers come from the built-in model.";
 }
-
 async function checkLlm(key = getApiKey()) {
   renderLlm(null);
   try {
@@ -513,7 +521,7 @@ async function checkLlm(key = getApiKey()) {
     renderLlm(r);
     return r;
   } catch (err) {
-    js("llm-status").textContent = "Couldn't check Claude";
+    js("llm-status").textContent = "Couldn't reach the server";
     js("llm-dot").className = "c-dot c-dot--bad";
     return { ok: false, message: err.message };
   }

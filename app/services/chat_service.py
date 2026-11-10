@@ -155,13 +155,22 @@ class ChatService:
         )
 
         if is_no_answer(full) or not full.strip():
-            yield from self._finish(user, question, conversation_id, FALLBACK_MESSAGE, [], False, retrieved)
+            yield from self._finish(
+                user, question, conversation_id, FALLBACK_MESSAGE, [], False, retrieved, answerer.provider
+            )
             return
         if emitted < len(full):
             yield _event("token", {"text": full[emitted:]})
         answer = full.strip()
         yield from self._finish(
-            user, question, conversation_id, answer, extract_citations(answer, sources), True, retrieved
+            user,
+            question,
+            conversation_id,
+            answer,
+            extract_citations(answer, sources),
+            True,
+            retrieved,
+            answerer.provider,
         )
 
     def _finish(
@@ -173,6 +182,7 @@ class ChatService:
         citations: list[Citation],
         answerable: bool,
         retrieved: list[dict[str, Any]],
+        engine: str | None = None,
     ) -> Iterator[Event]:
         yield _event("citations", {"citations": [c.model_dump() for c in citations], "retrieved": retrieved})
         with self.db.session() as s:
@@ -192,7 +202,14 @@ class ChatService:
             )
             conv_id, msg_id = conv.id, msg.id
         yield _event(
-            "done", {"answer": answer, "answerable": answerable, "conversation_id": conv_id, "message_id": msg_id}
+            "done",
+            {
+                "answer": answer,
+                "answerable": answerable,
+                "conversation_id": conv_id,
+                "message_id": msg_id,
+                "engine": engine,
+            },
         )
 
     # ---- history ----

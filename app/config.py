@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     min_rerank_score: float = -5.0
 
+    # Multi-server mode (all optional; empty = single-process defaults).
+    redis_url: str = ""  # shared rate limits, ingest progress and per-user locks
+    chroma_url: str = ""  # Chroma server instead of the embedded store (required with >1 worker)
+
     max_upload_mb: int = 20
     max_docs_user: int = 50
     max_docs_guest: int = 10

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -46,9 +47,24 @@ def _where(user_id: str, doc_ids: list[str] | None) -> dict[str, Any]:
 class VectorStore:
     """Persistent cosine-similarity vector index shared by all users, partitioned by metadata."""
 
-    def __init__(self, path: Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=str(path), settings=ChromaSettings(anonymized_telemetry=False))
+    def __init__(self, path: Path, url: str = "") -> None:
+        """Embedded Chroma at `path`, or a Chroma server at `url` (e.g. http://chroma:8000).
+
+        The embedded client must only be used by one process; multi-worker deployments set
+        CHROMA_URL so every worker talks to the same server.
+        """
+        settings = ChromaSettings(anonymized_telemetry=False)
+        if url:
+            parts = urlsplit(url)
+            self._client = chromadb.HttpClient(
+                host=parts.hostname or "localhost",
+                port=parts.port or (443 if parts.scheme == "https" else 8000),
+                ssl=parts.scheme == "https",
+                settings=settings,
+            )
+        else:
+            path.mkdir(parents=True, exist_ok=True)
+            self._client = chromadb.PersistentClient(path=str(path), settings=settings)
         self._col = self._client.get_or_create_collection(COLLECTION, metadata={"hnsw:space": "cosine"})
 
     def add_chunks(self, user_id: str, chunks: list[Chunk], embeddings: list[list[float]]) -> None:

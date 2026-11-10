@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.config import Settings
 from app.db.session import Database
@@ -16,8 +16,9 @@ from app.retrieval.hybrid import ChunkReranker, HybridRetriever, QueryEmbedder
 from app.retrieval.vector_store import VectorStore
 from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
+from app.services.coordination import MemoryLocks, MemoryProgress, RedisLocks, RedisProgress
 from app.services.ingest_service import DocEmbedder, IngestService
-from app.services.rate_limit import RateLimiter
+from app.services.rate_limit import MemoryRateLimiter, RateLimiter, RedisRateLimiter
 from app.services.retrieval_service import RetrievalService
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +55,7 @@ class Container:
     ask_limiter: RateLimiter
     server_llm: LLMClient | None = None
     local: LocalAnswerer | None = None
+    redis: Any = None
     models_loaded: bool = True
 
     def engine(self, user_key: str | None) -> Engine:
@@ -86,6 +88,7 @@ def build_container(
     llm_factory: LLMFactory | None = None,
     reader: SpanReader | None = None,
     sample_pdf: Path = SAMPLE_PDF,
+    redis_client: Any = None,
 ) -> Container:
     """Wire the app. Tests pass light fakes for the models, the reader and the LLM factory."""
     if embedder is None or reranker is None:
@@ -101,9 +104,21 @@ def build_container(
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(settings.sqlalchemy_url)
     db.migrate()
-    vectors = VectorStore(settings.chroma_dir)
+    vectors = VectorStore(settings.chroma_dir, settings.chroma_url)
     bm25 = BM25Store(settings.bm25_dir)
-    ingest = IngestService(db, vectors, bm25, embedder, settings)
+    if redis_client is None and settings.redis_url:
+        import redis as redis_lib
+
+        redis_client = redis_lib.Redis.from_url(settings.redis_url)
+    if redis_client is not None:
+        progress, locks = RedisProgress(redis_client), RedisLocks(redis_client)
+        auth_limiter: RateLimiter = RedisRateLimiter(redis_client, settings.auth_rate_per_min)
+        ask_limiter: RateLimiter = RedisRateLimiter(redis_client, settings.ask_rate_per_min)
+    else:
+        progress, locks = MemoryProgress(), MemoryLocks()
+        auth_limiter = MemoryRateLimiter(settings.auth_rate_per_min)
+        ask_limiter = MemoryRateLimiter(settings.ask_rate_per_min)
+    ingest = IngestService(db, vectors, bm25, embedder, settings, progress, locks)
     retriever = HybridRetriever(embedder, vectors, bm25, reranker, settings.retrieve_k, settings.rrf_k)
     retrieval = RetrievalService(retriever, settings.final_k)
     factory = llm_factory or (lambda key: make_llm(settings, key))
@@ -123,8 +138,9 @@ def build_container(
         retrieval=retrieval,
         chat=ChatService(db, retrieval, settings.min_rerank_score),
         llm_factory=factory,
-        auth_limiter=RateLimiter(settings.auth_rate_per_min),
-        ask_limiter=RateLimiter(settings.ask_rate_per_min),
+        auth_limiter=auth_limiter,
+        ask_limiter=ask_limiter,
+        redis=redis_client,
         server_llm=server_llm,
         local=local,
     )

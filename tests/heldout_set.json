@@ -1,0 +1,25 @@
+{
+  "_note": "Held-out questions written after all tuning was finished; never used to choose models or thresholds.",
+  "documents": ["samples/halcyon_h2_handbook.pdf", "samples/solvane_w7_charger_guide.pdf"],
+  "questions": [
+    {"question": "What is the IP rating of the battery enclosure?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 1, "answerable": true, "answer": ["IP56"]},
+    {"question": "How tall is the H2?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 1, "answerable": true, "answer": ["1150 mm"]},
+    {"question": "How much free space is needed above the battery?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 2, "answerable": true, "answer": ["30 cm"]},
+    {"question": "How long does a standard single-unit installation take?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 3, "answerable": true, "answer": ["four hours"]},
+    {"question": "When does gateway pairing mode time out?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 4, "answerable": true, "answer": ["ten minutes"]},
+    {"question": "How long does the battery wait before reconnecting when grid power returns?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 6, "answerable": true, "answer": ["five minutes"]},
+    {"question": "How often should a certified installer inspect the system?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 7, "answerable": true, "answer": ["five years"]},
+    {"question": "What does error E-330 mean?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 8, "answerable": true, "answer": ["backup reserve"]},
+    {"question": "How many cycles is the H2 designed to last?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 10, "answerable": true, "answer": ["8,000"]},
+    {"question": "Which safety standards does the H2 comply with?", "expected_doc": "halcyon_h2_handbook.pdf", "expected_page": 10, "answerable": true, "answer": ["IEC 62619|UL 9540"]},
+    {"question": "What is the W7's maximum power on a three-phase supply?", "expected_doc": "solvane_w7_charger_guide.pdf", "expected_page": 1, "answerable": true, "answer": ["22 kW"]},
+    {"question": "Which protocol lets third-party platforms manage the W7?", "expected_doc": "solvane_w7_charger_guide.pdf", "expected_page": 3, "answerable": true, "answer": ["OCPP"]},
+    {"question": "How many household members can share access to the charger?", "expected_doc": "solvane_w7_charger_guide.pdf", "expected_page": 3, "answerable": true, "answer": ["five"]},
+    {"question": "What is the lowest operating temperature of the W7?", "expected_doc": "solvane_w7_charger_guide.pdf", "expected_page": 8, "answerable": true, "answer": ["-30"]},
+
+    {"question": "What colours is the H2 available in?", "expected_doc": null, "expected_page": null, "answerable": false},
+    {"question": "Where is Halcyon's headquarters?", "expected_doc": null, "expected_page": null, "answerable": false},
+    {"question": "What is the phone number for Solvane support?", "expected_doc": null, "expected_page": null, "answerable": false},
+    {"question": "When was the W7 first released?", "expected_doc": null, "expected_page": null, "answerable": false}
+  ]
+}

@@ -1,8 +1,7 @@
 """Document ingestion: validate → store → (background) read → split → embed → index."""
 
 import logging
-import threading
-from dataclasses import dataclass
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Protocol
 
@@ -17,6 +16,7 @@ from app.ingest.loader import IngestError, load_pdf, sha256_of, validate_pdf_byt
 from app.retrieval.bm25_store import BM25Store
 from app.retrieval.vector_store import VectorStore
 from app.schemas import DocumentStatus
+from app.services.coordination import LockProvider, MemoryLocks, MemoryProgress, ProgressStore
 
 log = logging.getLogger("rag-chat.ingest")
 EMBED_BATCH = 32
@@ -26,31 +26,30 @@ class DocEmbedder(Protocol):
     def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
 
 
-@dataclass
-class _Progress:
-    stage: str
-    percent: int
-
-
 class IngestService:
     """Owns the write path for documents and keeps SQLite, Chroma, BM25 and files consistent."""
 
     def __init__(
-        self, db: Database, vectors: VectorStore, bm25: BM25Store, embedder: DocEmbedder, settings: Settings
+        self,
+        db: Database,
+        vectors: VectorStore,
+        bm25: BM25Store,
+        embedder: DocEmbedder,
+        settings: Settings,
+        progress: ProgressStore | None = None,
+        locks: LockProvider | None = None,
     ) -> None:
         self.db = db
         self.vectors = vectors
         self.bm25 = bm25
         self.embedder = embedder
         self.settings = settings
-        self._progress: dict[str, _Progress] = {}
-        self._user_locks: dict[str, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
+        self.progress = progress or MemoryProgress()
+        self.locks = locks or MemoryLocks()
         settings.uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    def _lock(self, user_id: str) -> threading.Lock:
-        with self._locks_guard:
-            return self._user_locks.setdefault(user_id, threading.Lock())
+    def _lock(self, user_id: str) -> AbstractContextManager[object]:
+        return self.locks.lock(f"user:{user_id}")
 
     def _file(self, doc_id: str) -> Path:
         return self.settings.uploads_dir / f"{doc_id}.pdf"  # random id, never the user's filename
@@ -74,7 +73,7 @@ class IngestService:
                 raise TooMany("doc_limit", f"You can keep up to {limit} documents. Delete one to upload another.")
             doc = repo.add(Document(user_id=user.id, filename=filename, sha256=digest, status="processing"))
         self._file(doc.id).write_bytes(data)
-        self._progress[doc.id] = _Progress("queued", 0)
+        self.progress.set(doc.id, "queued", 0)
         return doc
 
     def process(self, doc_id: str) -> None:
@@ -125,7 +124,7 @@ class IngestService:
             if not self._file(doc_id).exists():
                 raise AppError("file_missing", "The original file is gone. Please upload it again.")
             doc.status, doc.error = "processing", None
-        self._progress[doc_id] = _Progress("queued", 0)
+        self.progress.set(doc_id, "queued", 0)
         return doc
 
     def ingest_now(self, user: User, data: bytes, filename: str) -> Document:
@@ -135,7 +134,7 @@ class IngestService:
         return doc
 
     def _set(self, doc_id: str, stage: str, percent: int) -> None:
-        self._progress[doc_id] = _Progress(stage, min(percent, 100))
+        self.progress.set(doc_id, stage, min(percent, 100))
 
     def _fail(self, doc_id: str, user_id: str, message: str) -> None:
         self._set(doc_id, "failed", 100)
@@ -159,11 +158,11 @@ class IngestService:
             doc = DocumentRepo(s).get(user_id, doc_id)
             if doc is None:
                 raise NotFound("not_found", "This document no longer exists.")
-            prog = self._progress.get(doc_id)
+            prog = self.progress.get(doc_id)
             if doc.status != "processing":
                 stage, pct = doc.status, 100
             else:
-                stage, pct = (prog.stage, prog.percent) if prog else ("queued", 0)
+                stage, pct = prog or ("queued", 0)
             return DocumentStatus(
                 id=doc.id,
                 status=doc.status,
@@ -186,7 +185,7 @@ class IngestService:
             self.vectors.delete_doc(user_id, doc_id)
             self.bm25.rebuild(user_id, self.vectors.user_chunks(user_id))
         self._file(doc_id).unlink(missing_ok=True)
-        self._progress.pop(doc_id, None)
+        self.progress.delete(doc_id)
 
     def purge_user(self, user_id: str) -> None:
         """Remove a user's vectors, BM25 index and files (rows are removed by the caller)."""
@@ -197,4 +196,4 @@ class IngestService:
             self.bm25.delete_user(user_id)
         for doc_id in doc_ids:
             self._file(doc_id).unlink(missing_ok=True)
-            self._progress.pop(doc_id, None)
+            self.progress.delete(doc_id)
