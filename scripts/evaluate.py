@@ -22,8 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.config import Settings  # noqa: E402
-from app.generation.answer import passes_gate  # noqa: E402
-from app.main import build_services  # noqa: E402
+from app.db.models import User  # noqa: E402
+from app.db.repositories import UserRepo  # noqa: E402
+from app.services.container import build_container  # noqa: E402
+from app.services.retrieval_service import passes_gate  # noqa: E402
 from app.retrieval.hybrid import Mode  # noqa: E402
 from app.schemas import RetrievedChunk  # noqa: E402
 
@@ -58,12 +60,15 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         settings = Settings(data_dir=Path(tmp))
-        services = build_services(settings)
+        services = build_container(settings)
+        with services.db.session() as s:
+            user = UserRepo(s).add(User(email="eval@example.com", password_hash="-"))
         total_chunks = 0
         for pdf in pdfs:
-            meta, _ = services.index.add_pdf(pdf.read_bytes(), pdf.name)
-            total_chunks += meta.chunks
-            print(f"Indexed {meta.filename}: {meta.pages} pages, {meta.chunks} chunks.", file=sys.stderr)
+            doc = services.ingest.ingest_now(user, pdf.read_bytes(), pdf.name)
+            status = services.ingest.status(user.id, doc.id)
+            total_chunks += status.chunks
+            print(f"Indexed {doc.filename}: {status.pages} pages, {status.chunks} chunks.", file=sys.stderr)
 
         rows = []
         rerank_runs: list[tuple[dict, list[RetrievedChunk]]] = []
@@ -71,7 +76,7 @@ def main() -> None:
             hits, hits1, rr = 0, 0, 0.0
             start = time.perf_counter()
             for q in questions:
-                results = services.retriever.retrieve(q["question"], top_k=5, mode=mode)
+                results = services.retrieval.search(user.id, q["question"], mode=mode).chunks
                 if mode == "rerank":
                     rerank_runs.append((q, results))
                 if q["answerable"]:

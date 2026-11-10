@@ -1,10 +1,8 @@
-"""Lightweight test doubles so unit/API tests run without downloading models or calling an LLM."""
+"""Lightweight model doubles so tests run without downloading models. (`FakeLLM` lives in the app.)"""
 
 import hashlib
 import math
-from collections.abc import Iterator
 
-from app.generation.llm import LLMError
 from app.retrieval.bm25_store import tokenize
 from app.schemas import RetrievedChunk
 
@@ -39,24 +37,3 @@ class FakeReranker:
         ]
         scored.sort(key=lambda c: c.rerank_score, reverse=True)
         return scored[:top_k]
-
-
-class FakeLLM:
-    """Replays a scripted answer in small deltas and records the prompts it received."""
-
-    model = "fake-model"
-
-    def __init__(self, answer: str, chunk_size: int = 3, valid: bool = True) -> None:
-        self.answer = answer
-        self.chunk_size = chunk_size
-        self.valid = valid
-        self.calls: list[tuple[str, str]] = []
-
-    def check(self) -> None:
-        if not self.valid:
-            raise LLMError("This API key was rejected by Anthropic.")
-
-    def stream(self, system: str, prompt: str) -> Iterator[str]:
-        self.calls.append((system, prompt))
-        for i in range(0, len(self.answer), self.chunk_size):
-            yield self.answer[i : i + self.chunk_size]

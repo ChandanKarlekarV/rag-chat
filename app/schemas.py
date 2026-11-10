@@ -1,8 +1,11 @@
-"""Pydantic v2 data models shared across ingest, retrieval, generation and the API."""
+"""Pydantic v2 models for the pipeline and the HTTP API."""
 
-from typing import Optional
+from datetime import datetime
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# ---------- pipeline ----------
 
 
 class PageText(BaseModel):
@@ -25,16 +28,6 @@ class Chunk(BaseModel):
     token_count: int
 
 
-class DocumentMeta(BaseModel):
-    """Row of the `documents` table as exposed by the API."""
-
-    doc_id: str
-    filename: str
-    pages: int
-    chunks: int
-    uploaded_at: str
-
-
 class RetrievedChunk(BaseModel):
     """A chunk plus every score it collected on its way through the pipeline."""
 
@@ -46,56 +39,133 @@ class RetrievedChunk(BaseModel):
 
 
 class Citation(BaseModel):
-    """A source the answer actually cited."""
+    """A source shown to the user."""
 
     n: int
+    doc_id: str
     filename: str
     page_start: int
     page_end: int
     snippet: str  # first ~300 chars, for compact previews
-    text: str = ""  # full chunk text, shown in the source drawer
+    text: str  # full chunk text, shown in the source drawer
     vector_score: Optional[float] = None
     bm25_score: Optional[float] = None
     rrf_score: Optional[float] = None
     rerank_score: Optional[float] = None
 
 
+# ---------- auth ----------
+
+
+class Credentials(BaseModel):
+    """Register / login body."""
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserOut(BaseModel):
+    """The signed-in user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    is_guest: bool
+
+
+# ---------- documents ----------
+
+Status = Literal["processing", "ready", "failed"]
+Stage = Literal["queued", "reading", "splitting", "understanding", "ready", "failed"]
+
+
+class DocumentOut(BaseModel):
+    """A document as listed in the sidebar."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    filename: str
+    pages: int
+    chunks: int
+    status: Status
+    error: Optional[str] = None
+    created_at: datetime
+
+
+class DocumentStatus(BaseModel):
+    """Ingest progress for polling."""
+
+    id: str
+    status: Status
+    stage: Stage
+    progress: int = Field(ge=0, le=100)
+    error: Optional[str] = None
+    pages: int = 0
+    chunks: int = 0
+
+
+# ---------- chat ----------
+
+
 class AskRequest(BaseModel):
-    """Body of `POST /ask`."""
+    """Body of `POST /chat/ask`."""
 
     question: str = Field(min_length=1, max_length=2000)
+    conversation_id: Optional[str] = None
     doc_ids: Optional[list[str]] = None
-    top_k: Optional[int] = Field(default=None, ge=1, le=10)  # None -> TOP_K setting
 
 
-class AskResponse(BaseModel):
-    """Final, non-streamed shape of an answer (also the payload of the SSE `done` event)."""
+class MessageOut(BaseModel):
+    """A persisted chat message."""
 
-    answer: str
-    citations: list[Citation]
-    answerable: bool
-
-
-class UploadResponse(BaseModel):
-    """Result of `POST /upload`."""
-
-    document: DocumentMeta
-    duplicate: bool = False
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    answerable: Optional[bool] = None
+    citations: list[Citation] = []
+    created_at: datetime
 
 
-class HealthResponse(BaseModel):
-    """Result of `GET /health`."""
+class ConversationOut(BaseModel):
+    """A conversation in the history list."""
 
-    status: str
-    documents: int
-    llm_configured: bool  # True only when the server has its own key in .env
-    llm_model: str
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    created_at: datetime
+
+
+class ConversationDetail(ConversationOut):
+    """A conversation with its messages."""
+
+    messages: list[MessageOut]
+
+
+class RenameRequest(BaseModel):
+    """Body of `PATCH /conversations/{id}`."""
+
+    title: str = Field(min_length=1, max_length=120)
 
 
 class LLMCheckResponse(BaseModel):
     """Result of `POST /llm/check`."""
 
     ok: bool
-    source: str  # "browser" (key pasted in the UI), "server" (.env) or "none"
+    source: Literal["browser", "server", "none"]
+    provider: str
     model: str
     message: str
+
+
+class HealthResponse(BaseModel):
+    """Result of `GET /health`."""
+
+    status: Literal["ok", "degraded"]
+    database: bool
+    models_loaded: bool
+    llm_configured: bool  # True when the server has its own key (or the fake provider)
+    llm_provider: str
+    llm_model: str

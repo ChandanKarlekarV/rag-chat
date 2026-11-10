@@ -1,170 +1,94 @@
-"""FastAPI application: routes, model loading at startup, static frontend."""
+"""FastAPI app factory: routers, error shape, request ids, static UI and startup (models load once)."""
 
-import json
 import logging
-from collections.abc import AsyncIterator, Callable, Iterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import Settings, get_settings
-from app.db import DocumentDB
-from app.generation.answer import NO_DOCS_MESSAGE, answer_stream
-from app.generation.llm import LLM, AnthropicLLM, LLMError
-from app.index import DocumentIndex
-from app.ingest.loader import IngestError
-from app.retrieval.bm25_store import BM25Store
-from app.retrieval.embedder import get_embedder
-from app.retrieval.hybrid import HybridRetriever
-from app.retrieval.reranker import get_reranker
-from app.retrieval.vector_store import VectorStore
-from app.schemas import AskRequest, DocumentMeta, HealthResponse, LLMCheckResponse, UploadResponse
+from app.api import auth, chat, documents, health
+from app.config import DEV_SECRET, get_settings
+from app.errors import AppError
+from app.logging_setup import configure_logging, request_id_var
+from app.services.container import Container, build_container
 
 log = logging.getLogger("rag-chat")
 STATIC_DIR = Path(__file__).parent / "static"
 
-
-API_KEY_HEADER = "X-Anthropic-Api-Key"
-LLMFactory = Callable[[str], LLM]
-
-
-@dataclass
-class Services:
-    """Long-lived components shared by all requests."""
-
-    settings: Settings
-    index: DocumentIndex
-    retriever: HybridRetriever
-    llm: LLM | None  # built from the server's .env key, if any
-    llm_factory: LLMFactory  # builds an LLM from a key the user pasted into the UI
-
-    def resolve_llm(self, user_key: str | None) -> tuple[LLM | None, str]:
-        """Prefer the key sent by the browser; fall back to the server key. Returns (llm, source)."""
-        if user_key and user_key.strip():
-            return self.llm_factory(user_key.strip()), "browser"
-        return self.llm, ("server" if self.llm else "none")
+_HTTP_MESSAGES = {
+    404: ("not_found", "We couldn't find that."),
+    405: ("method_not_allowed", "That action isn't supported here."),
+    413: ("too_large", "That file is too large."),
+}
 
 
-def anthropic_factory(settings: Settings) -> LLMFactory:
-    """Factory that creates an Anthropic client for a given key with the configured model."""
-    return lambda key: AnthropicLLM(key, settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s)
+def _error(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
 
 
-def build_services(settings: Settings, llm: LLM | None = None) -> Services:
-    """Load models once and wire the stores together."""
-    embedder = get_embedder(settings.embed_model)
-    reranker = get_reranker(settings.rerank_model)
-    vectors = VectorStore(settings.chroma_dir)
-    bm25 = BM25Store(settings.bm25_path)
-    if not bm25.chunk_ids and vectors.count():
-        bm25.rebuild(vectors.all_chunks())
-    index = DocumentIndex(
-        DocumentDB(settings.sqlite_path),
-        vectors,
-        bm25,
-        embedder,
-        settings.uploads_dir,
-        settings.chunk_size,
-        settings.chunk_overlap,
-        settings.max_upload_mb,
-    )
-    retriever = HybridRetriever(embedder, vectors, bm25, reranker, settings.candidates, settings.rrf_k)
-    factory = anthropic_factory(settings)
-    if llm is None and settings.anthropic_api_key:
-        llm = factory(settings.anthropic_api_key)
-    return Services(settings, index, retriever, llm, factory)
+def _validation_message(exc: RequestValidationError) -> str:
+    fields = {str(e["loc"][-1]) for e in exc.errors() if e.get("loc")}
+    if "question" in fields:
+        return "Type a question (up to 2,000 characters)."
+    if fields & {"email", "password"}:
+        return "Enter your email and password."
+    if "file" in fields:
+        return "Choose a PDF file to upload."
+    return "Some of the information sent was missing or invalid. Please check and try again."
 
 
-def create_app(services: Services | None = None) -> FastAPI:
-    """Application factory. Tests inject `services`; production builds them at startup."""
+def create_app(container: Container | None = None) -> FastAPI:
+    """Application factory. Tests inject a container built with fakes."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.services = services or build_services(get_settings())
+        settings = get_settings()
+        if container is None and settings.is_prod and settings.secret_key == DEV_SECRET:
+            raise RuntimeError("Set SECRET_KEY in the environment before running with APP_ENV=prod.")
+        app.state.container = container or build_container(settings)
+        app.state.container.auth.cleanup_guests()
         log.info("rag-chat ready")
         yield
 
-    # No CORS middleware on purpose: the UI is same-origin, and other sites must not be able to
-    # spend the server's key or relay a user's key through this API.
-    app = FastAPI(title="rag-chat", version="1.0.0", description="Chat with your PDFs.", lifespan=lifespan)
+    app = FastAPI(title="rag-chat", version="2.0.0", description="Chat with your PDFs.", lifespan=lifespan)
 
-    def svc(request: Request) -> Services:
-        return request.app.state.services
-
-    @app.get("/health", response_model=HealthResponse)
-    def health(request: Request) -> HealthResponse:
-        s = svc(request)
-        return HealthResponse(
-            status="ok",
-            documents=s.index.db.count(),
-            llm_configured=s.llm is not None,
-            llm_model=s.settings.llm_model,
-        )
-
-    @app.post("/llm/check", response_model=LLMCheckResponse)
-    def llm_check(
-        request: Request, user_key: str | None = Header(default=None, alias=API_KEY_HEADER)
-    ) -> LLMCheckResponse:
-        """Check whether the browser's key (or else the server's key) can reach the model."""
-        s = svc(request)
-        llm, source = s.resolve_llm(user_key)
-        model = s.settings.llm_model
-        if llm is None:
-            return LLMCheckResponse(ok=False, source=source, model=model, message="No API key has been added yet.")
+    @app.middleware("http")
+    async def request_id(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+        token = request_id_var.set(rid)
         try:
-            llm.check()
-        except LLMError as exc:
-            return LLMCheckResponse(ok=False, source=source, model=model, message=str(exc))
-        return LLMCheckResponse(ok=True, source=source, model=model, message=f"Connected to {model}.")
+            response = await call_next(request)
+        finally:
+            request_id_var.reset(token)
+        response.headers["X-Request-ID"] = rid
+        return response
 
-    @app.post("/upload", response_model=UploadResponse)
-    def upload(request: Request, file: UploadFile = File(...)) -> UploadResponse:
-        s = svc(request)
-        limit = s.settings.max_upload_mb * 1024 * 1024
-        data = file.file.read(limit + 1)
-        try:
-            meta, duplicate = s.index.add_pdf(data, file.filename or "document.pdf")
-        except IngestError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return UploadResponse(document=meta, duplicate=duplicate)
+    @app.exception_handler(AppError)
+    async def app_error(_: Request, exc: AppError) -> JSONResponse:
+        return _error(exc.status, exc.code, exc.message)
 
-    @app.get("/documents", response_model=list[DocumentMeta])
-    def documents(request: Request) -> list[DocumentMeta]:
-        return svc(request).index.list()
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        return _error(422, "invalid_request", _validation_message(exc))
 
-    @app.delete("/documents/{doc_id}")
-    def delete_document(request: Request, doc_id: str) -> dict[str, str]:
-        if not svc(request).index.delete(doc_id):
-            raise HTTPException(status_code=404, detail="Document not found.")
-        return {"status": "deleted", "doc_id": doc_id}
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        code, message = _HTTP_MESSAGES.get(exc.status_code, ("http_error", "Something went wrong. Please try again."))
+        return _error(exc.status_code, code, message)
 
-    @app.post("/ask")
-    def ask(
-        request: Request, body: AskRequest, user_key: str | None = Header(default=None, alias=API_KEY_HEADER)
-    ) -> StreamingResponse:
-        s = svc(request)
-        llm, _ = s.resolve_llm(user_key)
+    @app.exception_handler(Exception)
+    async def unexpected(_: Request, exc: Exception) -> JSONResponse:
+        log.exception("unhandled error")
+        return _error(500, "internal", "Something went wrong on our side. Please try again.")
 
-        def events() -> Iterator[str]:
-            if s.index.db.count() == 0:
-                yield _sse("error", {"message": NO_DOCS_MESSAGE})
-                return
-            try:
-                top_k = body.top_k or s.settings.top_k
-                sources = s.retriever.retrieve(body.question, top_k, body.doc_ids or None)
-            except Exception:
-                log.exception("retrieval failed")
-                yield _sse("error", {"message": "Search failed unexpectedly. Please try again."})
-                return
-            for ev in answer_stream(body.question, sources, llm, s.settings.min_rerank_score):
-                yield _sse(ev["event"], ev["data"])
-
-        headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-        return StreamingResponse(events(), media_type="text/event-stream", headers=headers)
+    for router in (auth.router, documents.router, chat.router, health.router):
+        app.include_router(router)
 
     @app.get("/", include_in_schema=False)
     def index_page() -> FileResponse:
@@ -174,12 +98,5 @@ def create_app(services: Services | None = None) -> FastAPI:
     return app
 
 
-def _sse(event: str, data: dict) -> str:
-    """Format one Server-Sent Event."""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-for _noisy in ("httpx", "httpx2", "huggingface_hub", "sentence_transformers", "chromadb"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
+configure_logging()
 app = create_app()
