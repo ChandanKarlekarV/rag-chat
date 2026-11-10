@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = [".venv", "data", "data-offline"]
+extend-exclude = [".venv", "data", "data-offline", "*.md"]  # never rewrite the spec documents
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

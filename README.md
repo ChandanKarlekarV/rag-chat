@@ -72,7 +72,7 @@ Measured output (28 chunks, laptop CPU, `MIN_RERANK_SCORE=-5.0`):
 |---|---|---|---|---|---|
 | Vector only | 0.80 | 0.97 | 0.88 | n/a | 9 ms |
 | Hybrid (RRF) | 0.93 | 1.00 | 0.95 | n/a | 10 ms |
-| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 141 ms |
+| Hybrid + Rerank | 1.00 | 1.00 | 1.00 | 0.87 | 145 ms |
 
 - **Hit@k**: the expected (document, page) is within a top-k chunk's page range. **MRR**: mean of 1/rank of the first such chunk.
 - **Fallback accuracy**: share of all 38 questions where the gate makes the right call (unanswerable → refused, answerable → sent to the LLM). It applies only to the rerank config, because the gate thresholds the rerank score. At -5.0, all 30 answerable questions pass and 3 of 8 unanswerable ones are refused outright. The other 5 (e.g. "How much does the H2 cost?") look on-topic to the reranker, so they are left to the LLM's `NO_ANSWER` rule.
@@ -135,7 +135,7 @@ Offline demo with no key: `LLM_PROVIDER=fake uvicorn app.main:app`.
 
 ```bash
 ruff check . && ruff format --check .
-pytest -W error::DeprecationWarning       # 47 tests: unit, integration, isolation
+pytest -W error::DeprecationWarning       # 48 tests: unit, integration, isolation
 python scripts/check_contrast.py          # WCAG AA for every token pair, both themes
 python scripts/evaluate.py                # retrieval comparison table
 grep -rni gradient app/static             # must print nothing
