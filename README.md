@@ -186,6 +186,15 @@ It runs the full pipeline, then a judge model (default `claude-opus-5-5`) grades
 
 ## Run it
 
+### Windows: double-click to start and stop (no terminal, no editor needed)
+
+After the one-time local setup below, use the two files in the project folder:
+
+- **`Start rag-chat.bat`** starts the app in the background (no window), waits until the models are loaded (about 20–40 seconds) and opens http://127.0.0.1:8000 in your browser. It runs on its own and doesn't depend on Claude Code or any editor. Logs go to `data/server.log`.
+- **`Stop rag-chat.bat`** stops the app completely, including the server's child process, so no CPU, RAM or GPU memory stays in use. It confirms when everything is stopped.
+
+Tip: right-click `Start rag-chat.bat` → *Send to* → *Desktop (create shortcut)* for a desktop icon.
+
 ### Docker (one container)
 
 ```bash
