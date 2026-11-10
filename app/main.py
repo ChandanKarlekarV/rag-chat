@@ -142,4 +142,6 @@ def _sse(event: str, data: dict) -> str:
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+for _noisy in ("httpx", "httpx2", "huggingface_hub", "sentence_transformers", "chromadb"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 app = create_app()

@@ -52,7 +52,8 @@ class Citation(BaseModel):
     filename: str
     page_start: int
     page_end: int
-    snippet: str
+    snippet: str  # first ~300 chars, for compact previews
+    text: str = ""  # full chunk text, shown in the source drawer
     vector_score: Optional[float] = None
     bm25_score: Optional[float] = None
     rrf_score: Optional[float] = None

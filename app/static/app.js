@@ -388,7 +388,7 @@ function openDrawer(citation, question) {
   els.drawerTitle.textContent = citation.filename;
   els.drawerTitle.title = citation.filename;
   els.drawerPages.textContent = citation.page_start === citation.page_end ? `Page ${citation.page_start}` : `Pages ${citation.page_start}–${citation.page_end}`;
-  els.drawerSnippet.innerHTML = highlight(citation.snippet, question);
+  els.drawerSnippet.innerHTML = highlight(citation.text || citation.snippet, question);
   if (state.debug) {
     els.drawerScores.innerHTML = `<p class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Retrieval scores</p>
       <dl class="grid grid-cols-2 gap-2 text-sm">

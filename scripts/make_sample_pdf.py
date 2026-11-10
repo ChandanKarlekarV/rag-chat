@@ -1,9 +1,13 @@
-"""Generate `samples/halcyon_h2_handbook.pdf`, an original fictional manual used for demos and evaluation.
+"""Generate the sample PDFs used for demos and evaluation.
 
-The text is written for this project (no third-party copyright). Every page carries a running
-header and footer so the cleaner's boilerplate removal is exercised.
+* `samples/halcyon_h2_handbook.pdf` - a fictional home-battery manual (the evaluation target).
+* `samples/solvane_w7_charger_guide.pdf` - a fictional EV-charger guide that deliberately covers
+  the same topics (Wi-Fi, warranty, status lights, error codes, installation) as a hard distractor.
 
-Usage: python scripts/make_sample_pdf.py [output_path]
+All text is original and written for this project (no third-party copyright). Every page carries a
+running header and footer so the cleaner's boilerplate removal is exercised.
+
+Usage: python scripts/make_sample_pdf.py [output_dir]
 """
 
 import sys
@@ -136,26 +140,112 @@ The H2 complies with IEC 62619 for the safety of industrial lithium batteries an
     ),
 ]
 
+DISTRACTOR_TITLE = "Solvane W7 Wallbox EV Charger - User Guide"
 
-def build(output: Path) -> Path:
-    """Render the handbook to `output` and return the path."""
+DISTRACTOR_PAGES: list[tuple[str, str]] = [
+    (
+        "1. About Your W7 Wallbox",
+        """The Solvane W7 is a home charging station for electric vehicles. It delivers up to 7.4 kW on a single-phase supply or 22 kW on a three-phase supply, depending on how it is installed.
+
+The W7 has a 7.5 metre tethered Type 2 cable, so there is no need to carry a separate cable for home charging. The enclosure is rated IP65 and IK10 and can be mounted outdoors on a garage wall, a fence post or a dedicated pedestal.
+
+The charger weighs 6.8 kg including the cable. A built-in energy meter records every session, and you can review your charging history and costs in the Solvane app.
+
+The W7 can work alongside a home battery or solar system. In Solar Boost mode it charges your car only from surplus solar energy that would otherwise be exported to the grid.""",
+    ),
+    (
+        "2. Installation",
+        """The W7 must be installed by a qualified electrician in accordance with local wiring rules. A dedicated circuit protected by a 32 A Type A RCBO is required for single-phase installations.
+
+Mount the charger so that the cable holster sits between 80 cm and 120 cm above the ground. Use the supplied wall plate and the four 6 mm screws; masonry, concrete and timber surfaces are all suitable when the correct fixings are used.
+
+A load management clamp, part number SV-CT1, can be fitted around the main supply cable. It lets the W7 reduce its charging current automatically so that your home never exceeds the capacity of the main fuse.
+
+A typical installation takes two to three hours. After installation the electrician activates the charger in the Solvane Pro app and records the maximum current setting.""",
+    ),
+    (
+        "3. Connecting to Wi-Fi and the App",
+        """The W7 connects to your home network over Wi-Fi on either the 2.4 GHz or the 5 GHz band. A wired Ethernet port is available under the front cover, and an optional 4G module can be fitted for locations without Wi-Fi coverage.
+
+To connect, open the Solvane app, choose Add Charger and scan the QR code printed inside the front cover. The charger creates a temporary hotspot during setup, which closes automatically after fifteen minutes.
+
+Once connected, the app lets you start and stop charging, set a charging schedule, lock the charger with a PIN, and view live power. Up to five household members can share access to the same charger.
+
+The W7 supports the OCPP 1.6J protocol, so it can also be managed by third-party charging platforms if you use the charger for business purposes.""",
+    ),
+    (
+        "4. Everyday Charging",
+        """To charge, park your vehicle, take the connector from the holster and plug it into your car's charging inlet. Charging starts automatically unless a schedule or PIN lock is active.
+
+Scheduled charging lets you choose start and finish times so that charging happens when electricity is cheapest, for example overnight. If you set a departure time instead, the W7 calculates when to start so that the car is ready in time.
+
+You can stop charging at any time from the app or from your car. When charging is finished, unplug the connector from the car first and return it to the holster to protect the pins from dirt and moisture.
+
+Never use an extension lead or an adapter with the W7. Do not charge if the cable or connector is visibly damaged.""",
+    ),
+    (
+        "5. Indicator Light and Error Codes",
+        """A light ring around the front of the W7 shows its status. A solid white ring means the charger is ready. A pulsing blue ring means the vehicle is charging, and a solid blue ring means charging is complete or paused by the car.
+
+A solid red ring indicates a ground fault: the charger has detected leakage current and has stopped for safety. Unplug the vehicle, wait one minute and try again; if the fault returns, contact your electrician. A flashing yellow ring means the charger is waiting for a scheduled start time.
+
+Error codes are shown in the app. Error E-201 means the supply voltage is too low. Error E-214 means the connector temperature sensor has reported overheating; check that the connector pins are clean. Error E-305 indicates a communication problem with the vehicle; unplug the connector and plug it in again.
+
+To restart the W7, switch off its circuit breaker for thirty seconds and then switch it on again.""",
+    ),
+    (
+        "6. Care and Maintenance",
+        """Keep the connector clean and dry. Wipe the charger and cable with a soft damp cloth when needed; do not use abrasive cleaners, solvents or high-pressure water.
+
+Check the cable for cuts or kinks once a month. A damaged cable must be replaced by an electrician using a genuine Solvane replacement cable.
+
+Firmware updates are downloaded automatically over Wi-Fi and installed when no vehicle is connected. You can also check for updates manually in the app under Charger Settings.
+
+An annual test of the built-in residual current protection is recommended. Press the TEST button under the front cover; the light ring turns red and charging stops. Press RESET to restore normal operation.""",
+    ),
+    (
+        "7. Warranty and Support",
+        """The Solvane W7 is covered by a three-year limited warranty from the date of purchase. The warranty can be extended to five years by registering the charger in the app within 30 days of installation.
+
+The warranty covers defects in materials and workmanship. It does not cover damage caused by vehicle collisions, misuse, incorrect installation or the use of adapters.
+
+For support, use the Help section of the app or email support. Please have your charger serial number ready; it is printed on the label on the underside of the charger.
+
+At the end of its life, return the W7 to a recycling centre for electrical equipment. Do not dispose of it with household waste.""",
+    ),
+    (
+        "8. Specifications",
+        """Rated power: 7.4 kW single-phase, 22 kW three-phase. Rated current: 32 A. Cable: 7.5 m tethered Type 2. Ingress protection: IP65. Impact protection: IK10.
+
+Connectivity: Wi-Fi 2.4 GHz and 5 GHz, Ethernet, optional 4G. Protocols: OCPP 1.6J. Built-in protection: 6 mA DC leakage detection.
+
+Operating temperature: -30 to 50 degrees C. Weight: 6.8 kg including cable. Dimensions: 300 x 200 x 110 mm.""",
+    ),
+]
+
+
+def build(
+    output: Path, title: str = TITLE, pages: list[tuple[str, str]] = PAGES, footer: str = "Rev. C"
+) -> Path:
+    """Render a manual to `output` and return the path."""
     doc = pymupdf.open()
-    total = len(PAGES)
-    for n, (heading, body) in enumerate(PAGES, start=1):
+    total = len(pages)
+    for n, (heading, body) in enumerate(pages, start=1):
         page = doc.new_page(width=595, height=842)  # A4
-        page.insert_text((50, 40), TITLE, fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4))
+        page.insert_text((50, 40), title, fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4))
         page.insert_text((50, 95), heading, fontsize=16, fontname="hebo")
         overflow = page.insert_textbox(
             pymupdf.Rect(50, 115, 545, 790), body, fontsize=10.5, fontname="helv", lineheight=1.35
         )
         if overflow < 0:
             raise RuntimeError(f"page {n} text does not fit")
-        page.insert_text((50, 815), f"Page {n} of {total} - Rev. C", fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4))
+        page.insert_text((50, 815), f"Page {n} of {total} - {footer}", fontsize=9, fontname="helv", color=(0.4, 0.4, 0.4))
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output)
     return output
 
 
 if __name__ == "__main__":
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("samples/halcyon_h2_handbook.pdf")
-    print(build(out))
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("samples")
+    print(build(out_dir / "halcyon_h2_handbook.pdf"))
+    print(build(out_dir / "solvane_w7_charger_guide.pdf", DISTRACTOR_TITLE, DISTRACTOR_PAGES, "Solvane Energy"))

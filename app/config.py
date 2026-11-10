@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     top_k: int = 5
     candidates: int = 20
     rrf_k: int = 60
-    min_rerank_score: float = -2.0
+    min_rerank_score: float = -5.0
 
     max_upload_mb: int = 20
     data_dir: Path = Path("./data")

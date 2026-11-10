@@ -47,6 +47,7 @@ def to_citation(n: int, r: RetrievedChunk) -> Citation:
         page_start=r.chunk.page_start,
         page_end=r.chunk.page_end,
         snippet=snippet,
+        text=text,
         vector_score=r.vector_score,
         bm25_score=r.bm25_score,
         rrf_score=r.rrf_score,
