@@ -35,8 +35,12 @@ class Settings(BaseSettings):
     # API mode. Optional shared key; users can paste their own in Settings (never stored server-side).
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5-5"  # verified on platform.claude.com models overview
+    # Or a shared key from any other supported provider (see app/generation/providers.py).
+    llm_api_key: str = ""
+    llm_provider: str = "auto"  # auto-detect from the key, or: openai, gemini, groq, openrouter, mistral, deepseek, xai
+    llm_api_model: str = ""  # empty = the provider's default
     llm_max_tokens: int = 2048
-    llm_timeout_s: float = 60.0
+    llm_timeout_s: float = 120.0  # study material asks for a few thousand tokens in one reply
 
     # Where local models run: "auto" (NVIDIA GPU if available, else CPU), "cuda" or "cpu".
     device: str = "auto"

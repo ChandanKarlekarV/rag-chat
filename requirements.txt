@@ -18,3 +18,5 @@ PyJWT==2.15.1
 alembic==1.20.1
 psycopg[binary]==3.3.8
 redis==8.1.0
+httpx==0.28.1  # Ollama and OpenAI-compatible providers (any API key)
+numpy==2.4.6  # study material: sentence scoring

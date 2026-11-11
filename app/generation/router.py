@@ -9,22 +9,35 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from app.generation.anthropic import AnthropicProvider
+from app.generation.anthropic import ApiProvider
 from app.generation.base import AnswerMode, AnswerProvider
 from app.generation.llm_base import LLMClient, LLMError
 from app.generation.ollama import NOT_RUNNING, OllamaLLM, OllamaProvider
+from app.generation.providers import ApiCredentials, resolve_credentials
 from app.generation.rewrite import HeuristicRewriter, LLMRewriter, QueryRewriter
 
 DESCRIPTIONS = {
     AnswerMode.LOCAL: "Finds and quotes the answer directly from your PDF. Free, private, works offline.",
     AnswerMode.OLLAMA: "Writes an answer using a model running on your computer.",
-    AnswerMode.API: "Writes a fuller answer using Claude. Needs an API key.",
+    AnswerMode.API: (
+        "Writes a fuller answer using your AI provider (Claude, OpenAI, Gemini, Groq and more). Needs an API key."
+    ),
 }
-TITLES = {AnswerMode.LOCAL: "Local · no key", AnswerMode.OLLAMA: "Ollama", AnswerMode.API: "Claude API"}
+TITLES = {AnswerMode.LOCAL: "Local · no key", AnswerMode.OLLAMA: "Ollama", AnswerMode.API: "API key"}
+NO_KEY = "Add an API key from any supported provider in Settings."
 OLLAMA_CACHE_S = 15.0
 
-LLMFactory = Callable[[str], LLMClient]
+LLMFactory = Callable[[ApiCredentials], LLMClient]
 OllamaFactory = Callable[[str], OllamaLLM]
+
+
+@dataclass(frozen=True)
+class KeyInput:
+    """What the browser sent for API mode: the pasted key and optional provider/model choices."""
+
+    key: str | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,13 +77,13 @@ class AnswerRouter:
         self,
         local: AnswerProvider | None,
         api_factory: LLMFactory,
-        server_key: str,
+        server_creds: ApiCredentials | None,
         ollama_factory: OllamaFactory | None,
         default_ollama_model: str,
     ) -> None:
         self.local = local
         self.api_factory = api_factory
-        self.server_key = server_key
+        self.server_creds = server_creds
         self.ollama_factory = ollama_factory
         self.default_ollama_model = default_ollama_model
         self._ollama = _OllamaStatus()
@@ -95,9 +108,27 @@ class AnswerRouter:
                 self._ollama = _OllamaStatus(time.monotonic(), False, [], str(exc))
         return self._ollama
 
-    def modes(self, user_key: str | None) -> list[ModeInfo]:
+    def credentials(self, key: KeyInput | None) -> ApiCredentials | None:
+        """The user's key (with its provider) if they sent one, else the server's, else None.
+
+        Raises LLMError when the user sent a key whose provider can't be determined.
+        """
+        if key is not None and (key.key or "").strip():
+            return resolve_credentials(key.key, key.provider, key.model)
+        return self.server_creds
+
+    def _api_status(self, key: KeyInput | None) -> tuple[bool, str]:
+        try:
+            creds = self.credentials(key)
+        except LLMError as exc:
+            return False, str(exc)
+        if creds is None:
+            return False, NO_KEY
+        return True, f"Key added ({creds.spec.name})."
+
+    def modes(self, key: KeyInput | None) -> list[ModeInfo]:
         """Every mode with whether it can run right now and why."""
-        has_key = bool((user_key or "").strip() or self.server_key)
+        api_ok, api_reason = self._api_status(key)
         ollama = self.ollama_status()
         local_ok = self.local is not None
         return [
@@ -114,15 +145,15 @@ class AnswerRouter:
             ModeInfo(
                 AnswerMode.API,
                 TITLES[AnswerMode.API],
-                has_key,
-                "Key added." if has_key else "Add your Anthropic API key in Settings.",
+                api_ok,
+                api_reason,
                 DESCRIPTIONS[AnswerMode.API],
             ),
         ]
 
-    def recommended(self, user_key: str | None) -> AnswerMode:
+    def recommended(self, key: KeyInput | None) -> AnswerMode:
         """Auto-selection: API key → API; Ollama reachable → Ollama; else Local."""
-        available = {m.mode for m in self.modes(user_key) if m.available}
+        available = {m.mode for m in self.modes(key) if m.available}
         for mode in (AnswerMode.API, AnswerMode.OLLAMA, AnswerMode.LOCAL):
             if mode in available:
                 return mode
@@ -133,27 +164,24 @@ class AnswerRouter:
     def pick(
         self,
         requested: AnswerMode | None,
-        user_key: str | None,
+        key: KeyInput | None,
         preferred: AnswerMode | None = None,
         ollama_model: str | None = None,
     ) -> Choice:
         """Provider for this request. An explicit request is honoured even if it then fails, so the
         user sees a friendly reason; a saved preference falls back to auto when unavailable."""
         if requested is None:
-            available = {m.mode for m in self.modes(user_key) if m.available}
-            requested = preferred if preferred in available else self.recommended(user_key)
-        key = (user_key or "").strip() or self.server_key
+            available = {m.mode for m in self.modes(key) if m.available}
+            requested = preferred if preferred in available else self.recommended(key)
         if requested == AnswerMode.API:
-            if not key:
-                return Choice(
-                    requested,
-                    None,
-                    HeuristicRewriter(),
-                    "no_api_key",
-                    "Add your Anthropic API key in Settings, or switch to Local mode.",
-                )
-            llm = self.api_factory(key)
-            return Choice(requested, AnthropicProvider(llm), LLMRewriter(llm))
+            try:
+                creds = self.credentials(key)
+            except LLMError as exc:
+                return Choice(requested, None, HeuristicRewriter(), "bad_api_key", str(exc))
+            if creds is None:
+                return Choice(requested, None, HeuristicRewriter(), "no_api_key", f"{NO_KEY} Or switch to Local mode.")
+            llm = self.api_factory(creds)
+            return Choice(requested, ApiProvider(llm), LLMRewriter(llm))
         if requested == AnswerMode.OLLAMA:
             if self.ollama_factory is None:
                 return Choice(requested, None, HeuristicRewriter(), "ollama_unreachable", NOT_RUNNING)

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.generation.fake import FakeLLM
 from app.generation.ollama import OllamaLLM
+from app.generation.providers import ApiCredentials
 from app.main import create_app
 from app.services.container import build_container
 from scripts.make_sample_pdf import build
@@ -85,8 +86,8 @@ def make_harness(
     )
     made: list[FakeLLM] = []
 
-    def factory(key: str) -> FakeLLM:
-        llm = FakeLLM("The battery stores 11.2 kWh of usable energy [1].", valid=key in (GOOD_KEY, "server-key"))
+    def factory(creds: ApiCredentials) -> FakeLLM:
+        llm = FakeLLM("The battery stores 11.2 kWh of usable energy [1].", valid=creds.key in (GOOD_KEY, "server-key"))
         made.append(llm)
         return llm
 

@@ -11,8 +11,10 @@ from app.generation.base import AnswerMode
 from app.generation.extractive import LocalExtractiveProvider, SentenceScorer, SpanReader
 from app.generation.llm_anthropic import AnthropicLLM
 from app.generation.llm_base import LLMClient
+from app.generation.llm_openai import OpenAICompatLLM
 from app.generation.ollama import OllamaLLM
-from app.generation.router import AnswerRouter
+from app.generation.providers import ApiCredentials, resolve_credentials
+from app.generation.router import AnswerRouter, KeyInput
 from app.retrieval.bm25_store import BM25Store
 from app.retrieval.hybrid import ChunkReranker, HybridRetriever, QueryEmbedder
 from app.retrieval.vector_store import VectorStore
@@ -22,11 +24,12 @@ from app.services.coordination import MemoryLocks, MemoryProgress, RedisLocks, R
 from app.services.ingest_service import DocEmbedder, IngestService
 from app.services.rate_limit import MemoryRateLimiter, RateLimiter, RedisRateLimiter
 from app.services.retrieval_service import RetrievalService
+from app.services.study_service import StudyService
 
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_PDF = ROOT / "samples" / "halcyon_h2_handbook.pdf"
 
-LLMFactory = Callable[[str], LLMClient]
+LLMFactory = Callable[[ApiCredentials], LLMClient]
 OllamaFactory = Callable[[str], OllamaLLM]
 
 
@@ -51,6 +54,7 @@ class Container:
     retrieval: RetrievalService
     chat: ChatService
     router: AnswerRouter
+    study: StudyService
     auth_limiter: RateLimiter
     ask_limiter: RateLimiter
     redis: Any = None
@@ -58,12 +62,30 @@ class Container:
     device: str = "cpu"  # where the local models run
 
     def engine(
-        self, user_key: str | None, requested: str | None, preferred: str | None, ollama_model: str | None
+        self, key: KeyInput | None, requested: str | None, preferred: str | None, ollama_model: str | None
     ) -> Engine:
         """Resolve the answer mode for one request into what the chat service needs."""
         pref = AnswerMode(preferred) if preferred in ("local", "ollama", "api") else None
-        choice = self.router.pick(AnswerMode(requested) if requested else None, user_key, pref, ollama_model)
+        choice = self.router.pick(AnswerMode(requested) if requested else None, key, pref, ollama_model)
         return Engine(choice.mode.value, choice.provider, choice.rewriter, choice.error_code, choice.error_message)
+
+
+def make_api_llm(settings: Settings, creds: ApiCredentials) -> LLMClient:
+    """The HTTP client for the provider the credentials belong to."""
+    if creds.spec.kind == "anthropic":
+        return AnthropicLLM(
+            creds.key, creds.model or settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s
+        )
+    return OpenAICompatLLM(creds.spec, creds.key, creds.model, settings.llm_timeout_s)
+
+
+def server_credentials(settings: Settings) -> ApiCredentials | None:
+    """The server's shared key, if one is configured (ANTHROPIC_API_KEY, else LLM_API_KEY)."""
+    if settings.anthropic_api_key:
+        return ApiCredentials(settings.anthropic_api_key, "anthropic", settings.llm_model)
+    if settings.llm_api_key:
+        return resolve_credentials(settings.llm_api_key, settings.llm_provider, settings.llm_api_model)
+    return None
 
 
 def build_container(
@@ -122,12 +144,10 @@ def build_container(
         if reader is not None
         else None
     )
-    api_factory = llm_factory or (
-        lambda key: AnthropicLLM(key, settings.llm_model, settings.llm_max_tokens, settings.llm_timeout_s)
-    )
+    api_factory = llm_factory or (lambda creds: make_api_llm(settings, creds))
     if ollama_factory is None and settings.ollama_enabled:
         ollama_factory = lambda model: OllamaLLM(settings.ollama_base_url, model)  # noqa: E731
-    router = AnswerRouter(local, api_factory, settings.anthropic_api_key, ollama_factory, settings.ollama_model)
+    router = AnswerRouter(local, api_factory, server_credentials(settings), ollama_factory, settings.ollama_model)
     return Container(
         settings=settings,
         db=db,
@@ -136,6 +156,7 @@ def build_container(
         retrieval=retrieval,
         chat=ChatService(db, retrieval, settings.min_rerank_score),
         router=router,
+        study=StudyService(db, settings, embedder),
         auth_limiter=auth_limiter,
         ask_limiter=ask_limiter,
         redis=redis_client,

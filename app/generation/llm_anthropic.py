@@ -55,8 +55,9 @@ class AnthropicLLM:
         if final.stop_reason == "refusal":
             raise LLMError("The language model declined to answer this question.")
 
-    def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
-        """Short non-streamed completion. Thinking is turned off where the model allows it.
+    def complete(self, system: str, user: str, max_tokens: int = 512, json_mode: bool = False) -> str:
+        """Non-streamed completion. Thinking is turned off where the model allows it. `json_mode`
+        is left to the prompt here (the caller parses defensively).
 
         unverified: not exercised against the live API here (no key on the build machine); the
         parameters follow the bundled Claude API reference for claude-sonnet-5-5.
@@ -79,6 +80,18 @@ class AnthropicLLM:
         if msg.stop_reason == "refusal":
             raise LLMError("The language model declined this request.")
         return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
+    def list_models(self) -> list[str]:
+        """Model ids this key can use (`models.list`, verified in the installed SDK 2.7.0)."""
+        try:
+            page = self._client.models.list(limit=100)
+        except anthropic.AuthenticationError as exc:
+            raise LLMError("This API key was rejected by Anthropic. Check that you copied it completely.") from exc
+        except anthropic.APIConnectionError as exc:
+            raise LLMError("Could not reach Anthropic from the server.") from exc
+        except anthropic.APIError as exc:
+            raise LLMError("Anthropic could not check this key right now. Try again shortly.") from exc
+        return sorted(m.id for m in page.data)
 
     def check(self) -> None:
         """Validate the key and model with the free Models API (no tokens are spent)."""

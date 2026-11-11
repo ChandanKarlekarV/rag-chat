@@ -175,6 +175,14 @@ class ModeOut(BaseModel):
     description: str
 
 
+class ProviderOut(BaseModel):
+    """An AI provider whose API keys are accepted."""
+
+    id: str
+    name: str
+    key_url: str
+
+
 class ModesResponse(BaseModel):
     """Result of `GET /chat/modes`."""
 
@@ -183,6 +191,7 @@ class ModesResponse(BaseModel):
     default_mode: ModeChoice
     ollama_models: list[str]
     ollama_model: str
+    providers: list[ProviderOut] = []
 
 
 class TestKeyResponse(BaseModel):
@@ -190,6 +199,115 @@ class TestKeyResponse(BaseModel):
 
     ok: bool
     message: str
+    provider: str | None = None  # detected or chosen provider id
+    provider_name: str | None = None
+    models: list[str] = []  # chat models the key can use
+    model: str | None = None  # the model that will be used
+
+
+# ---------- study material ----------
+
+StudyKind = Literal["notes", "sticky", "mindmap", "flow", "glossary", "flashcards"]
+
+
+class Heading(BaseModel):
+    """A heading found in a PDF (1 = top level)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    page: int
+    level: int
+    title: str
+
+
+class StudyRequest(BaseModel):
+    """Body of `POST /study`."""
+
+    doc_id: str
+    kinds: list[StudyKind] = Field(min_length=1, max_length=6)
+    mode: Literal["local", "ollama", "api"] | None = None  # None = saved default, else auto
+
+
+class NoteItem(BaseModel):
+    """One short-note bullet."""
+
+    text: str = Field(min_length=1, max_length=600)
+    page: int | None = None
+
+
+class NoteSection(BaseModel):
+    """Short notes for one section of the document."""
+
+    title: str = Field(min_length=1, max_length=200)
+    page: int | None = None
+    points: list[NoteItem] = Field(min_length=1)
+
+
+class StickyNote(BaseModel):
+    """One key fact on a sticky note."""
+
+    title: str = Field(default="Key point", max_length=80)
+    text: str = Field(min_length=1, max_length=400)
+    page: int | None = None
+    tone: int = Field(default=1, ge=1, le=4)  # which of the four note colours
+
+
+class MindNode(BaseModel):
+    """A node of the mind map."""
+
+    label: str = Field(min_length=1, max_length=120)
+    page: int | None = None
+    children: list["MindNode"] = []
+
+
+class FlowStep(BaseModel):
+    """One step of a process."""
+
+    text: str = Field(min_length=1, max_length=400)
+    page: int | None = None
+
+
+class Flow(BaseModel):
+    """A step-by-step process, drawn as a flowchart."""
+
+    title: str = Field(min_length=1, max_length=200)
+    steps: list[FlowStep] = Field(min_length=2)
+
+
+class GlossaryTerm(BaseModel):
+    """A key term and its definition."""
+
+    term: str = Field(min_length=1, max_length=120)
+    definition: str = Field(min_length=1, max_length=600)
+    page: int | None = None
+
+
+class Flashcard(BaseModel):
+    """A question on the front, the answer on the back."""
+
+    front: str = Field(min_length=1, max_length=400)
+    back: str = Field(min_length=1, max_length=600)
+    page: int | None = None
+
+
+class StudyPack(BaseModel):
+    """Result of `POST /study`."""
+
+    doc_id: str
+    filename: str
+    title: str
+    pages: int
+    mode: Literal["local", "ollama", "api"]
+    label: str
+    kinds: list[StudyKind]
+    notes: list[NoteSection] = []
+    sticky: list[StickyNote] = []
+    mindmap: MindNode | None = None
+    flows: list[Flow] = []
+    glossary: list[GlossaryTerm] = []
+    flashcards: list[Flashcard] = []
+    warnings: list[str] = []
+    seconds: float
 
 
 class HealthResponse(BaseModel):

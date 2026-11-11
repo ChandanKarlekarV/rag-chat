@@ -4,18 +4,21 @@ import json
 import logging
 from collections.abc import Iterator
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import API_KEY_HEADER, get_container, get_current_user, require_fetch_header
+from app.api.deps import get_container, get_current_user, key_input, require_fetch_header
 from app.db.models import User
-from app.generation.anthropic import AnthropicProvider
+from app.generation.llm_base import LLMError
+from app.generation.providers import PROVIDERS, default_model, resolve_credentials
+from app.generation.router import KeyInput
 from app.schemas import (
     AskRequest,
     ConversationDetail,
     ConversationOut,
     ModeOut,
     ModesResponse,
+    ProviderOut,
     RenameRequest,
     TestKeyResponse,
 )
@@ -35,11 +38,11 @@ def ask(
     body: AskRequest,
     user: User = Depends(get_current_user),
     c: Container = Depends(get_container),
-    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    key: KeyInput = Depends(key_input),
 ) -> StreamingResponse:
     """Stream an answer as SSE events: `mode`, `rewrite`?, `token`*, `citations`, `done` (or `error`)."""
     c.ask_limiter.hit(f"ask:{user.id}", "You're asking very quickly. Please wait a moment and try again.")
-    engine = c.engine(user_key, body.mode, user.preferred_mode, user.ollama_model)
+    engine = c.engine(key, body.mode, user.preferred_mode, user.ollama_model)
     events = c.chat.ask(user, body.question, engine, body.conversation_id, body.doc_ids)  # validates eagerly
 
     def stream() -> Iterator[str]:
@@ -58,19 +61,21 @@ def ask(
 def modes(
     user: User = Depends(get_current_user),
     c: Container = Depends(get_container),
-    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    key: KeyInput = Depends(key_input),
 ) -> ModesResponse:
-    """Each answer mode with availability and reason, the recommended one, and installed Ollama models."""
-    infos = c.router.modes(user_key)
+    """Each answer mode with availability and reason, the recommended one, Ollama models and the
+    providers whose keys are accepted."""
+    infos = c.router.modes(key)
     return ModesResponse(
         modes=[
             ModeOut(mode=m.mode.value, title=m.title, available=m.available, reason=m.reason, description=m.description)
             for m in infos
         ],
-        recommended=c.router.recommended(user_key).value,
+        recommended=c.router.recommended(key).value,
         default_mode=user.preferred_mode,  # type: ignore[arg-type]
         ollama_models=c.router.ollama_status().models,
         ollama_model=user.ollama_model or c.settings.ollama_model,
+        providers=[ProviderOut(id=p.id, name=p.name, key_url=p.key_url) for p in PROVIDERS.values()],
     )
 
 
@@ -78,14 +83,31 @@ def modes(
 def test_key(
     user: User = Depends(get_current_user),
     c: Container = Depends(get_container),
-    user_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    key: KeyInput = Depends(key_input),
 ) -> TestKeyResponse:
-    """Validate a pasted key (sent in the header, never stored) with the free Models API."""
-    key = (user_key or "").strip()
-    if not key:
-        return TestKeyResponse(ok=False, message="Paste your API key first.")
-    ok, message = AnthropicProvider(c.router.api_factory(key)).is_available()
-    return TestKeyResponse(ok=ok, message="It works. Claude API mode is ready." if ok else message)
+    """Validate a pasted key (sent in a header, never stored) by listing its models (free, no tokens).
+
+    Works for any supported provider; returns the chat models the key can use and the one chosen.
+    """
+    try:
+        creds = resolve_credentials(key.key, key.provider, key.model)
+        models = c.router.api_factory(creds).list_models()
+    except LLMError as exc:
+        return TestKeyResponse(ok=False, message=str(exc))
+    spec = creds.spec
+    model = creds.model if creds.model in models else default_model(spec, models)
+    if spec.kind == "anthropic" and not creds.model:
+        model = c.settings.llm_model if c.settings.llm_model in models or not models else model
+    if not model:
+        return TestKeyResponse(ok=False, message=f"Your {spec.name} key works, but it lists no chat models we can use.")
+    return TestKeyResponse(
+        ok=True,
+        message=f"It works. Your {spec.name} key is ready (model: {model}).",
+        provider=spec.id,
+        provider_name=spec.name,
+        models=models,
+        model=model,
+    )
 
 
 @router.get("/conversations", response_model=list[ConversationOut])

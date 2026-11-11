@@ -9,9 +9,10 @@ from app.generation.base import AnswerMode
 from app.generation.extractive import LocalExtractiveProvider, answer_type_ok, split_sentences
 from app.generation.fake import FakeLLM
 from app.generation.prompt import NO_ANSWER_TOKEN
+from app.generation.providers import ApiCredentials
 from app.generation.question_type import classify
 from app.generation.reader import Span
-from app.generation.router import AnswerRouter
+from app.generation.router import AnswerRouter, KeyInput
 from app.schemas import Chunk, RetrievedChunk
 from tests.conftest import CSRF, GOOD_KEY, OLLAMA_ANSWER, ask, make_harness, register, upload
 
@@ -195,19 +196,20 @@ class _Ollama:
 def _router(server_key="", ollama_models=None, local=True):
     local_p = _local([]) if local else None
     ollama_factory = (lambda m: _Ollama(ollama_models)) if ollama_models is not False else None
-    return AnswerRouter(local_p, lambda k: FakeLLM(), server_key, ollama_factory, "llama3.2")
+    server = ApiCredentials(server_key, "anthropic") if server_key else None
+    return AnswerRouter(local_p, lambda creds: FakeLLM(), server, ollama_factory, "llama3.2")
 
 
 def test_router_auto_selection():
     assert _router().recommended(None) == AnswerMode.LOCAL  # neither key nor Ollama
     assert _router(ollama_models=["llama3.2"]).recommended(None) == AnswerMode.OLLAMA
-    assert _router(ollama_models=["llama3.2"]).recommended("sk-ant-x") == AnswerMode.API  # key wins
+    assert _router(ollama_models=["llama3.2"]).recommended(KeyInput("sk-ant-x")) == AnswerMode.API  # key wins
     assert _router(server_key="srv").recommended(None) == AnswerMode.API
 
 
 def test_router_respects_preference_and_falls_back():
     r = _router(ollama_models=["llama3.2"])
-    assert r.pick(None, "sk-ant-x", preferred=AnswerMode.LOCAL).mode == AnswerMode.LOCAL
+    assert r.pick(None, KeyInput("sk-ant-x"), preferred=AnswerMode.LOCAL).mode == AnswerMode.LOCAL
     assert _router().pick(None, None, preferred=AnswerMode.API).mode == AnswerMode.LOCAL  # unavailable → auto
     explicit = _router().pick(AnswerMode.API, None)
     assert explicit.provider is None and explicit.error_code == "no_api_key"
@@ -246,8 +248,12 @@ def test_saved_default_mode_is_used(tmp_path, sample_pdf):
 def test_test_key_endpoint(h):
     c = h.client
     register(c)
-    assert c.post("/chat/test-key", headers=CSRF).json() == {"ok": False, "message": "Paste your API key first."}
-    assert c.post("/chat/test-key", headers=CSRF | {"X-LLM-Key": GOOD_KEY}).json()["ok"] is True
+    empty = c.post("/chat/test-key", headers=CSRF).json()
+    assert empty["ok"] is False and empty["message"] == "Paste your API key first."
+    good = c.post("/chat/test-key", headers=CSRF | {"X-LLM-Key": GOOD_KEY}).json()
+    assert good["ok"] is True and good["provider"] == "anthropic" and good["models"] == ["fake-model"]
+    unknown = c.post("/chat/test-key", headers=CSRF | {"X-LLM-Key": "no-known-prefix"}).json()
+    assert unknown["ok"] is False and "Choose the provider" in unknown["message"]
     bad = c.post("/chat/test-key", headers=CSRF | {"X-LLM-Key": "sk-ant-wrong"}).json()
     assert bad["ok"] is False and "rejected" in bad["message"]
 

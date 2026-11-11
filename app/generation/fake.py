@@ -30,7 +30,7 @@ class FakeLLM:
         for i in range(0, len(self.answer), self.chunk_size):
             yield self.answer[i : i + self.chunk_size]
 
-    def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+    def complete(self, system: str, user: str, max_tokens: int = 512, json_mode: bool = False) -> str:
         """Scripted completion, or echo the latest question (an identity rewrite)."""
         self.calls.append((system, user))
         if self.completion is not None:
@@ -42,6 +42,11 @@ class FakeLLM:
         """Succeeds unless constructed with `valid=False`."""
         if not self.valid:
             raise LLMError("This API key was rejected by Anthropic. Check that you copied it completely.")
+
+    def list_models(self) -> list[str]:
+        """The one fake model (after the same key check)."""
+        self.check()
+        return [self.model]
 
 
 class FakeProvider(GenerativeProvider):

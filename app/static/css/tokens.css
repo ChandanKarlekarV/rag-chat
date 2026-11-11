@@ -26,6 +26,10 @@
   --color-danger: #B42318;
   --color-danger-subtle: #FCE8E6;
   --color-focus: #0F766E;
+  --color-note-1: #FFF4C2;
+  --color-note-2: #E2F4E4;
+  --color-note-3: #E1EEFB;
+  --color-note-4: #FBE4EC;
   --color-scrim: rgba(31, 41, 51, 0.40);
   --shadow-sm: 0 1px 2px rgba(31, 41, 51, 0.06);
   --shadow-md: 0 4px 12px rgba(31, 41, 51, 0.08);
@@ -53,6 +57,10 @@
   --color-danger: #F28B82;
   --color-danger-subtle: #3B1D1A;
   --color-focus: #2DD4BF;
+  --color-note-1: #3A3416;
+  --color-note-2: #1C3424;
+  --color-note-3: #1B2D40;
+  --color-note-4: #3A1E2A;
   --color-scrim: rgba(0, 0, 0, 0.55);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40);
@@ -115,6 +123,12 @@
   --size-sidebar: 320px;
   --size-drawer: 440px;
   --size-measure: 72ch;
+  --size-study: 1040px;
+  --size-sticky: 200px;
+  --size-flashcard: 240px;
+  --size-flashcard-height: 160px;
+  --size-arrow: 6px;
+  --rotate-note: 1deg;
 
   /* motion */
   --duration-fast: 120ms;

@@ -227,10 +227,35 @@
         </div>
       </div>
     </section>
+
+    <section class="flex flex-col gap-4 c-study" style="padding: 0" aria-labelledby="sg-study">
+      <h2 class="c-heading" id="sg-study">Study material: choices, notes, sticky notes, mind map, flowchart, key terms, flashcards</h2>
+      <fieldset class="c-choice-grid"><legend class="c-label">Include</legend>
+        <label class="c-choice"><input type="checkbox" checked />Short notes</label><label class="c-choice"><input type="checkbox" />Mind map</label></fieldset>
+      <div class="c-notes"><article class="c-card"><h3 class="c-label">Safety Information <span class="c-page">p. 2</span></h3>
+        <ul><li>Do not install the unit within 90 cm of a gas meter. <span class="c-page">p. 2</span></li></ul></article></div>
+      <ul class="c-stickies">
+        <li class="c-sticky" data-tone="1"><p class="c-sticky__title">Capacity</p><p class="c-sticky__text">Each unit provides 11.2 kWh of usable energy.</p><span class="c-page">p. 1</span></li>
+        <li class="c-sticky" data-tone="2"><p class="c-sticky__title">Storm Watch</p><p class="c-sticky__text">Charges to 100 percent before a storm.</p><span class="c-page">p. 6</span></li>
+        <li class="c-sticky" data-tone="3"><p class="c-sticky__title">Warranty</p><p class="c-sticky__text">12 years from installation.</p><span class="c-page">p. 9</span></li>
+        <li class="c-sticky" data-tone="4"><p class="c-sticky__title">Error E-330</p><p class="c-sticky__text">The reserve setting could not be applied.</p><span class="c-page">p. 8</span></li>
+      </ul>
+      <div class="c-mindmap"><svg viewBox="-2 -2 424 104" style="width:100%;min-width:320px" role="img" aria-label="Mind map example">
+        <path class="c-mindmap__edge" d="M150,50 C175,50 175,20 200,20"/><path class="c-mindmap__edge" d="M150,50 C175,50 175,80 200,80"/>
+        <g class="c-mindmap__node c-mindmap__node--root"><rect x="0" y="34" width="150" height="32" rx="16"/><text><tspan x="12" y="50">Home battery</tspan></text></g>
+        <g class="c-mindmap__node c-mindmap__node--branch"><rect x="200" y="4" width="110" height="32" rx="8"/><text><tspan x="212" y="20">Safety</tspan></text></g>
+        <g class="c-mindmap__node c-mindmap__node--leaf"><rect x="200" y="64" width="110" height="32" rx="8"/><text><tspan x="212" y="80">Gas meter</tspan></text></g>
+      </svg></div>
+      <ol class="c-flow"><li class="c-flow__step"><span class="c-flow__num">1</span><p class="c-flow__text">Open the app <span class="c-page">p. 4</span></p></li>
+        <li class="c-flow__step"><span class="c-flow__num">2</span><p class="c-flow__text">Scan the code on the gateway</p></li></ol>
+      <dl class="c-glossary"><div><dt>Storm Watch <span class="c-page">p. 6</span></dt><dd>An optional feature that monitors severe weather warnings.</dd></div></dl>
+      <ul class="c-flashcards"><li><button type="button" class="c-flashcard" aria-pressed="false"><span class="c-flashcard__side">Question 1</span><span class="c-flashcard__text">What is Storm Watch?</span><span class="c-meta">Show answer</span></button></li>
+        <li><button type="button" class="c-flashcard" aria-pressed="true"><span class="c-flashcard__side">Answer 1</span><span class="c-flashcard__text">It charges the battery before a storm.</span><span class="c-meta">Show question</span></button></li></ul>
+    </section>
   </main>
 
   <script>
-    var TOKENS = ["bg", "surface", "surface-muted", "border", "text", "text-muted", "primary", "primary-subtle", "accent", "accent-subtle", "success", "success-subtle", "danger", "danger-subtle", "border-input", "focus"];
+    var TOKENS = ["bg", "surface", "surface-muted", "border", "text", "text-muted", "primary", "primary-subtle", "accent", "accent-subtle", "success", "success-subtle", "danger", "danger-subtle", "border-input", "focus", "note-1", "note-2", "note-3", "note-4"];
     document.querySelector("[data-swatches]").innerHTML = TOKENS.map(function (t) {
       return '<div class="flex flex-col gap-1"><div class="sg-swatch" style="background: var(--color-' + t + ')"></div><span class="c-meta">--color-' + t + "</span></div>";
     }).join("");

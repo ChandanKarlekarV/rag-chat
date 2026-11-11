@@ -162,6 +162,10 @@
     <main class="c-main">
       <header class="c-topbar">
         <button class="c-btn c-btn--secondary c-btn--sm md:hidden" data-js="open-sidebar" aria-controls="sidebar" aria-expanded="false"><svg class="c-icon"><use href="#i-menu"/></svg>Documents</button>
+        <div class="c-segmented c-view-switch" role="group" aria-label="View" data-js="view-switch">
+          <button type="button" aria-pressed="true" data-view="chat">Chat</button>
+          <button type="button" aria-pressed="false" data-view="study">Study</button>
+        </div>
         <h1 class="c-text u-truncate flex-1" style="font-weight: var(--weight-semibold)" data-js="conv-title">New conversation</h1>
         <button class="c-btn c-btn--ghost c-btn--sm" data-js="new-chat-top" aria-label="New conversation"><svg class="c-icon"><use href="#i-plus"/></svg><span class="hidden sm:inline">New</span></button>
         <div class="c-menu">
@@ -192,7 +196,7 @@
             <div class="c-segmented" role="radiogroup" aria-label="Answer mode" data-js="mode-group">
               <button type="button" role="radio" aria-checked="false" data-mode="local">Local · no key</button>
               <button type="button" role="radio" aria-checked="false" data-mode="ollama">Ollama</button>
-              <button type="button" role="radio" aria-checked="false" data-mode="api">Claude API</button>
+              <button type="button" role="radio" aria-checked="false" data-mode="api">API key</button>
             </div>
             <p class="c-help" data-js="mode-help" aria-live="polite"></p>
           </div>
@@ -205,6 +209,41 @@
           </div>
         </div>
       </form>
+
+      <!-- ============ Study view ============ -->
+      <div class="u-scroll flex-1" data-js="study-view" hidden>
+        <div class="c-study">
+          <form class="c-card c-study__form" data-js="study-form" novalidate aria-labelledby="study-title">
+            <div>
+              <h2 class="c-heading" id="study-title">Make study material</h2>
+              <p class="c-help">Pick a PDF and what you want. Everything is made from that document only, with page numbers.</p>
+            </div>
+            <div class="c-study__row">
+              <div class="c-field">
+                <label class="c-label" for="study-doc">Document</label>
+                <select class="c-input" id="study-doc" data-js="study-doc"></select>
+              </div>
+              <div class="c-field">
+                <label class="c-label" for="study-mode">Made by</label>
+                <select class="c-input" id="study-mode" data-js="study-mode" aria-describedby="study-mode-help"></select>
+                <p class="c-help" id="study-mode-help" data-js="study-mode-help"></p>
+              </div>
+            </div>
+            <fieldset class="c-choice-grid" data-js="study-kinds">
+              <legend class="c-label">Include</legend>
+              <label class="c-choice"><input type="checkbox" value="notes" checked />Short notes</label>
+              <label class="c-choice"><input type="checkbox" value="sticky" checked />Sticky notes</label>
+              <label class="c-choice"><input type="checkbox" value="mindmap" checked />Mind map</label>
+              <label class="c-choice"><input type="checkbox" value="flow" checked />Flowchart</label>
+              <label class="c-choice"><input type="checkbox" value="glossary" checked />Key terms</label>
+              <label class="c-choice"><input type="checkbox" value="flashcards" checked />Flashcards</label>
+            </fieldset>
+            <p class="c-error-text" data-js="study-error" role="alert" hidden></p>
+            <div><button type="submit" class="c-btn c-btn--primary" data-js="study-go"><span class="c-btn__label">Make study material</span></button></div>
+          </form>
+          <section data-js="study-result" aria-live="polite" aria-busy="false"></section>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -244,10 +283,10 @@
         <div class="c-field">
           <label class="c-label" for="default-mode">Default mode</label>
           <select class="c-input" id="default-mode" data-js="default-mode" aria-describedby="default-mode-help">
-            <option value="auto">Automatic (Claude if a key is set, else Ollama, else Local)</option>
+            <option value="auto">Automatic (API key if set, else Ollama, else Local)</option>
             <option value="local">Local · no key</option>
             <option value="ollama">Ollama</option>
-            <option value="api">Claude API</option>
+            <option value="api">API key</option>
           </select>
           <p class="c-help" id="default-mode-help">Saved to your account. You can also switch above the question box.</p>
         </div>
@@ -259,19 +298,31 @@
       </section>
       <section class="flex flex-col gap-3" aria-labelledby="set-key-title">
         <div class="flex items-center justify-between gap-2">
-          <h3 class="c-label" id="set-key-title">Claude API key</h3>
+          <h3 class="c-label" id="set-key-title">API key</h3>
           <span class="c-badge c-badge--neutral" data-js="key-badge">Not set</span>
         </div>
-        <p class="c-help">Optional. Needed only for Claude API mode. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Where do I get a key?</a></p>
+        <p class="c-help">Optional. Works with Claude, OpenAI, Google Gemini, Groq, OpenRouter, Mistral, DeepSeek and xAI. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" data-js="key-link">Where do I get a key?</a></p>
         <form class="flex flex-col gap-3" data-js="key-form" novalidate autocomplete="off">
+          <div class="c-field">
+            <label class="c-label" for="key-provider">Provider</label>
+            <select class="c-input" id="key-provider" data-js="key-provider" aria-describedby="key-provider-help">
+              <option value="auto">Detect from the key</option>
+            </select>
+            <p class="c-help" id="key-provider-help">Most keys are recognised automatically. Choose the provider if yours isn't.</p>
+          </div>
           <div class="c-field">
             <label class="c-label" for="key-input">API key</label>
             <div class="flex gap-2">
-              <input class="c-input c-input--mono" id="key-input" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…" aria-describedby="key-help key-error" data-js="key-input" />
+              <input class="c-input c-input--mono" id="key-input" type="password" spellcheck="false" autocomplete="off" placeholder="Paste your key" aria-describedby="key-help key-error" data-js="key-input" />
               <button type="button" class="c-btn c-btn--secondary" data-js="key-reveal" aria-pressed="false">Show</button>
             </div>
-            <p class="c-help" id="key-help">Your key stays in this browser and is sent only to run your question.</p>
+            <p class="c-help" id="key-help">Your key stays in this browser and is sent only to run your request.</p>
             <p class="c-error-text" id="key-error" data-js="key-error" hidden></p>
+          </div>
+          <div class="c-field" data-js="key-model-field" hidden>
+            <label class="c-label" for="key-model">Model</label>
+            <select class="c-input" id="key-model" data-js="key-model" aria-describedby="key-model-help"></select>
+            <p class="c-help" id="key-model-help">The models your key can use. Saved with the key.</p>
           </div>
           <label class="c-check"><input type="checkbox" data-js="key-remember" />Remember on this device</label>
           <p class="c-help" data-js="key-remember-warn" hidden>The key will be saved in this browser until you forget it. Only use this on your own device.</p>

@@ -1,7 +1,7 @@
 // Chat: thread rendering, streaming answers, fallback card, citations, source drawer.
 
 import { askStream, request } from "./api.js";
-import { emit, getApiKey, readyDocs, state } from "./state.js";
+import { emit, keyHeaders, readyDocs, state } from "./state.js";
 import { escapeHtml, highlightWithSpan, icon, js, pageLabel, renderAnswer, showDrawer, toast } from "./ui.js";
 
 const thread = js("thread");
@@ -200,7 +200,7 @@ export async function ask(text) {
         mode: state.mode,
       },
       {
-        apiKey: getApiKey(),
+        keyHeaders: keyHeaders(),
         signal: state.controller.signal,
         on: {
           token: ({ text: t }) => {

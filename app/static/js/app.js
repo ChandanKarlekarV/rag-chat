@@ -2,7 +2,10 @@
 
 import { request, uploadFile } from "./api.js";
 import { ask, clearThread, loadConversation, renderEmpty, setDebug, stop } from "./chat.js";
-import { MODE_LABELS, emit, getApiKey, isKeyRemembered, keyHeaders, on, readyDocs, setApiKey, state } from "./state.js";
+import { renderStudyForm } from "./study.js";
+import {
+  MODE_LABELS, emit, getApiKey, getKeyMeta, isKeyRemembered, keyHeaders, on, readyDocs, setApiKey, state,
+} from "./state.js";
 import {
   closeDrawer, confirmDanger, escapeHtml, fmtDate, icon, isDrawerOpen, js, setTheme, showDrawer, themeChoice, toast, useThemeFor,
 } from "./ui.js";
@@ -140,7 +143,7 @@ async function enterApp(user) {
   clearThread();
   state.mode = null;
   loadModes();
-  js("question").focus();
+  setView(readPref("view") === "study" ? "study" : "chat");
 }
 
 /* ---------- mobile slide-over ---------- */
@@ -242,6 +245,7 @@ function renderDocs() {
   }
   renderScope();
   renderEmpty();
+  emit("docs-changed");
 }
 
 js("doc-list").addEventListener("change", (e) => {
@@ -424,7 +428,10 @@ js("conv-list").addEventListener("click", async (e) => {
   const rename = e.target.closest("[data-rename]");
   const del = e.target.closest("[data-delete-conv]");
   if (open) {
-    try { await loadConversation(open.dataset.open); renderConversations(); if (isMobile()) setSidebar(false); }
+    try {
+      if (state.view === "study") setView("chat");
+      await loadConversation(open.dataset.open); renderConversations(); if (isMobile()) setSidebar(false);
+    }
     catch (err) { toast(err.message, "error"); loadConversations(); }
   } else if (rename) {
     closeMenus();
@@ -473,6 +480,7 @@ for (const name of ["new-chat", "new-chat-top"]) {
     clearThread();
     renderConversations();
     if (isMobile()) setSidebar(false);
+    if (state.view === "study") setView("chat");
     js("question").focus();
   });
 }
@@ -482,7 +490,7 @@ for (const name of ["new-chat", "new-chat-top"]) {
 const MODE_HELP = {
   local: "Finds and quotes the answer directly from your PDF. Free, private, works offline.",
   ollama: "Writes an answer using a model running on your computer.",
-  api: "Writes a fuller answer using Claude. Needs an API key.",
+  api: "Writes a fuller answer using your AI provider (Claude, OpenAI, Gemini and more). Needs an API key.",
 };
 
 /** Load which modes can run (the pasted key travels in a header, never stored) and pick one. */
@@ -521,15 +529,37 @@ function renderModes() {
   js("llm-dot").className = "c-dot c-dot--ok";
   js("llm-status").textContent = `Answering: ${MODE_LABELS[state.mode]}`;
   const hasKey = Boolean(getApiKey());
+  const provider = m.providers.find((p) => p.id === getKeyMeta().provider);
   js("key-badge").className = `c-badge ${hasKey ? "c-badge--ready" : "c-badge--neutral"}`;
-  js("key-badge").innerHTML = hasKey ? `${icon("check")}Saved in this browser` : "Not set";
+  js("key-badge").innerHTML = hasKey ? `${icon("check")}${escapeHtml(provider ? provider.name : "Saved in this browser")}` : "Not set";
+  renderProviders(m.providers);
   js("default-mode").value = m.default_mode;
   const select = js("ollama-model");
   select.innerHTML = m.ollama_models.length
     ? m.ollama_models.map((n) => `<option value="${escapeHtml(n)}"${n === m.ollama_model || n === `${m.ollama_model}:latest` ? " selected" : ""}>${escapeHtml(n)}</option>`).join("")
     : `<option value="">${escapeHtml(byMode.ollama.reason)}</option>`;
   select.disabled = !m.ollama_models.length;
+  emit("modes-loaded");
 }
+
+/* ======================= chat / study view ======================= */
+
+function setView(view) {
+  state.view = view;
+  const study = view === "study";
+  document.querySelectorAll('[data-js="view-switch"] [data-view]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
+  js("scroller").hidden = study;
+  js("composer").hidden = study;
+  js("study-view").hidden = !study;
+  js("new-chat-top").hidden = study;
+  js("conv-title").textContent = study ? "Study material" : (state.conversations.find((c) => c.id === state.conversationId)?.title || "New conversation");
+  writePref("view", view);
+  if (study) { renderStudyForm(); js("study-doc").focus(); } else js("question").focus();
+}
+js("view-switch").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-view]");
+  if (b) setView(b.dataset.view);
+});
 
 async function savePreferences(body) {
   try {
@@ -563,10 +593,48 @@ js("default-mode").addEventListener("change", async (e) => {
 });
 js("ollama-model").addEventListener("change", (e) => { if (e.target.value) savePreferences({ ollama_model: e.target.value }); });
 
+/** Fill the provider list once (it comes from /chat/modes, so the server decides what's supported). */
+function renderProviders(providers) {
+  const select = js("key-provider");
+  if (select.options.length > 1 || !providers?.length) return;
+  select.insertAdjacentHTML("beforeend", providers.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join(""));
+  select.value = getKeyMeta().provider || "auto";
+  updateKeyLink();
+}
+
+function updateKeyLink() {
+  const providers = state.modes?.providers || [];
+  const chosen = providers.find((p) => p.id === js("key-provider").value) || providers.find((p) => p.id === "anthropic");
+  if (chosen) js("key-link").href = chosen.key_url;
+  js("key-link").textContent = chosen && js("key-provider").value !== "auto" ? `Get a ${chosen.name} key` : "Where do I get a key?";
+}
+
+function renderModelChoices(models, selected) {
+  const field = js("key-model-field");
+  field.hidden = !models.length;
+  js("key-model").innerHTML = models.map((id) => `<option value="${escapeHtml(id)}"${id === selected ? " selected" : ""}>${escapeHtml(id)}</option>`).join("");
+}
+
+js("key-provider").addEventListener("change", () => {
+  updateKeyLink();
+  renderModelChoices([], ""); // the model list belongs to the previous provider
+});
+
+js("key-model").addEventListener("change", (e) => {
+  const key = getApiKey();
+  if (!key) return;
+  setApiKey(key, isKeyRemembered(), { ...getKeyMeta(), model: e.target.value });
+  js("key-result").textContent = `Model set to ${e.target.value}.`;
+});
+
 function openSettings() {
   const k = getApiKey();
+  const meta = getKeyMeta();
   js("key-input").value = "";
-  js("key-input").placeholder = k ? `Saved key ending in ${k.slice(-4)}. Paste a new one to replace it.` : "sk-ant-…";
+  js("key-input").placeholder = k ? `Saved key ending in ${k.slice(-4)}. Paste a new one to replace it.` : "Paste your key";
+  if (js("key-provider").options.length > 1) js("key-provider").value = meta.provider || "auto";
+  renderModelChoices(meta.model ? [meta.model] : [], meta.model);
+  updateKeyLink();
   js("key-remember").checked = isKeyRemembered();
   js("key-remember-warn").hidden = !js("key-remember").checked;
   js("key-remove").disabled = !k;
@@ -598,24 +666,30 @@ js("key-form").addEventListener("submit", async (e) => {
   const typed = js("key-input").value.trim();
   const key = typed || getApiKey();
   if (!key) return keyError("Paste your API key first.");
-  if (typed && !typed.startsWith("sk-")) return keyError("That doesn't look like an Anthropic API key. They start with sk-ant-.");
+  if (/\s/.test(key)) return keyError("The key contains spaces. Copy it again without extra text.");
+  const provider = js("key-provider").value;
+  const headers = { "X-LLM-Key": key, "X-LLM-Provider": provider };
+  if (!js("key-model-field").hidden && js("key-model").value) headers["X-LLM-Model"] = js("key-model").value;
   const btn = js("key-save");
   busyButton(btn, true, "Testing…");
-  js("key-result").textContent = "Contacting Anthropic…";
+  js("key-result").textContent = "Checking the key with your provider…";
   let r;
   try {
-    r = await request("POST", "/chat/test-key", { headers: { "X-LLM-Key": key } });
+    r = await request("POST", "/chat/test-key", { headers });
   } catch (err) {
     r = { ok: false, message: err.message };
   }
   busyButton(btn, false, "Test and save key");
   if (r.ok) {
-    setApiKey(key, js("key-remember").checked);
+    setApiKey(key, js("key-remember").checked, { provider: r.provider, model: r.model });
+    js("key-provider").value = r.provider;
+    updateKeyLink();
+    renderModelChoices(r.models, r.model);
     js("key-remove").disabled = false;
     js("key-input").value = "";
     js("key-input").placeholder = `Saved key ending in ${key.slice(-4)}.`;
     js("key-result").textContent = r.message;
-    toast("Claude API mode is ready.");
+    toast(`${r.provider_name} is ready. API key mode will use ${r.model}.`);
     await loadModes();
   } else {
     keyError(`${r.message} The key was not saved.`);
@@ -634,7 +708,10 @@ js("key-reveal").addEventListener("click", () => {
 js("key-remove").addEventListener("click", async () => {
   setApiKey("", false);
   js("key-remove").disabled = true;
-  js("key-input").placeholder = "sk-ant-…";
+  js("key-input").placeholder = "Paste your key";
+  js("key-provider").value = "auto";
+  renderModelChoices([], "");
+  updateKeyLink();
   js("key-result").textContent = "Your key was removed from this browser.";
   state.mode = null;
   await loadModes();
@@ -677,7 +754,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (typing || js("app-view").hidden) return;
-  if (e.key === "/") { e.preventDefault(); js("question").focus(); }
+  if (e.key === "/" && state.view === "chat") { e.preventDefault(); js("question").focus(); }
   else if (e.key === "?") { e.preventDefault(); toggleShortcuts(true); }
 });
 document.addEventListener("click", (e) => {

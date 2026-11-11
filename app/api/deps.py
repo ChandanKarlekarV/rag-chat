@@ -4,12 +4,21 @@ from fastapi import Depends, Request
 
 from app.db.models import User
 from app.errors import AppError
+from app.generation.router import KeyInput
 from app.services.container import Container
 
 SESSION_COOKIE = "rag_session"
 CSRF_HEADER = "X-Requested-With"
 CSRF_VALUE = "fetch"
 API_KEY_HEADER = "X-LLM-Key"  # user-pasted key; never stored or logged
+API_PROVIDER_HEADER = "X-LLM-Provider"  # optional: which provider the key is for ("auto" = detect)
+API_MODEL_HEADER = "X-LLM-Model"  # optional: which of the provider's models to use
+
+
+def key_input(request: Request) -> KeyInput:
+    """The API key, provider and model the browser sent for this request (kept in memory only)."""
+    h = request.headers
+    return KeyInput(h.get(API_KEY_HEADER), h.get(API_PROVIDER_HEADER), h.get(API_MODEL_HEADER))
 
 
 def get_container(request: Request) -> Container:

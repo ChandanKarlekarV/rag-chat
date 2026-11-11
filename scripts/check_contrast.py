@@ -28,6 +28,9 @@ PAIRS: list[tuple[str, str, float]] = [
     ("--color-success", "--color-success-subtle", 4.5),
     ("--color-focus", "--color-surface", 3.0),
     ("--color-border-input", "--color-surface", 3.0),  # WCAG 1.4.11: input outlines
+    # study material: sticky notes and mind-map nodes
+    *[("--color-text", f"--color-note-{i}", 4.5) for i in range(1, 5)],
+    *[("--color-text-muted", f"--color-note-{i}", 4.5) for i in range(1, 5)],
 ]
 
 
