@@ -96,17 +96,26 @@ function setBusy(on, mode) {
 
 /* ======================= result ======================= */
 
+/** Topic colour (1-8) for a page: the section that page belongs to. */
+function topicOf(pack, pageNo, fallback = 1) {
+  if (!pageNo || !pack.topics.length) return fallback;
+  let idx = 0;
+  pack.topics.forEach((t, i) => { if (t.page <= pageNo) idx = i; });
+  return (idx % 8) + 1;
+}
+
 function renderResult(pack) {
   const tabs = pack.kinds.map((k, i) => `<button class="c-tabs__tab" role="tab" id="stab-${k}" aria-selected="${i === 0}" aria-controls="spanel-${k}" tabindex="${i === 0 ? 0 : -1}" data-study-tab="${k}">${KIND_TITLES[k]}</button>`).join("");
-  const panels = pack.kinds.map((k, i) => `<div class="c-study__panel" role="tabpanel" id="spanel-${k}" aria-labelledby="stab-${k}" tabindex="0" ${i === 0 ? "" : "hidden"}>${PANELS[k](pack)}</div>`).join("");
+  const panels = pack.kinds.map((k, i) => `<div class="c-study__panel" role="tabpanel" id="spanel-${k}" aria-labelledby="stab-${k}" tabindex="0" ${i === 0 ? "" : "hidden"}>
+      <h3 class="c-paper__section-title" style="margin-bottom: var(--space-4)">${KIND_TITLES[k]}</h3>${PANELS[k](pack)}</div>`).join("");
   const warnings = pack.warnings.map((w) => `<p class="c-notice">${icon("alert")}<span class="flex-1">${escapeHtml(w)}</span></p>`).join("");
+  const legend = pack.topics.length > 1
+    ? `<ul class="c-legend" aria-label="Topics and their colours">${pack.topics.map((t, i) => `<li data-topic="${(i % 8) + 1}"><span class="c-topic-dot" aria-hidden="true"></span>${escapeHtml(t.title)}</li>`).join("")}</ul>`
+    : "";
   js("study-result").innerHTML = `
     <div class="flex flex-col gap-4">
       <div class="c-study__head">
-        <div class="min-w-0">
-          <h2 class="c-heading" tabindex="-1">${escapeHtml(pack.title)}</h2>
-          <p class="c-meta">${escapeHtml(pack.label)} · ${pack.pages} page${pack.pages === 1 ? "" : "s"} · ${pack.seconds.toFixed(1)} s</p>
-        </div>
+        <p class="c-meta">${escapeHtml(pack.label)} · ${pack.pages} page${pack.pages === 1 ? "" : "s"} · ${pack.seconds.toFixed(1)} s</p>
         <div class="flex flex-wrap gap-2" data-js="study-actions">
           <button type="button" class="c-btn c-btn--secondary c-btn--sm" data-js="study-download">${icon("doc")}Download as Markdown</button>
           <button type="button" class="c-btn c-btn--ghost c-btn--sm" data-js="study-print">Print</button>
@@ -114,29 +123,62 @@ function renderResult(pack) {
       </div>
       ${warnings}
       <div class="c-tabs" role="tablist" aria-label="Study material">${tabs}</div>
-      ${panels}
+      <article class="c-paper">
+        <header class="flex flex-col gap-3">
+          <h2 class="c-paper__title" tabindex="-1">${escapeHtml(pack.title)}</h2>
+          ${legend}
+        </header>
+        ${panels}
+      </article>
     </div>`;
   js("study-download").addEventListener("click", () => download(pack));
   js("study-print").addEventListener("click", () => window.print());
 }
 
+function processDiagram(pack, f, compact = false) {
+  return `<ol class="c-flow${compact ? " c-flow--compact" : ""}" data-topic="${topicOf(pack, f.steps[0].page)}" aria-label="${escapeHtml(f.title)}">${f.steps.map((s, i) => `
+    <li class="c-flow__step"><span class="c-flow__num" aria-hidden="true">${i + 1}</span>
+      <p class="c-flow__text"><span class="sr-only">Step ${i + 1}: </span>${escapeHtml(s.text)} ${page(s.page)}</p></li>`).join("")}</ol>`;
+}
+
+function rulesDiagram(pack, f) {
+  return `<ul class="c-rules" data-topic="${topicOf(pack, f.steps[0].page)}" aria-label="${escapeHtml(f.title)}">${f.steps.map((s) => `
+    <li class="c-rule"><div class="c-rule__if">${escapeHtml(s.condition || "")}</div>
+      <span class="c-rule__arrow">${icon("send")}<span class="sr-only">then</span></span>
+      <div class="c-rule__then">${escapeHtml(s.text)} ${page(s.page)}</div></li>`).join("")}</ul>`;
+}
+
+const diagram = (pack, f, compact) => (f.kind === "conditions" ? rulesDiagram(pack, f) : processDiagram(pack, f, compact));
+
+/** Diagrams that belong to a notes section: those whose first page falls inside it. */
+function diagramsFor(pack, i) {
+  const start = pack.notes[i].page || 0;
+  const end = pack.notes.slice(i + 1).find((n) => (n.page || 0) > start)?.page ?? Infinity;
+  return pack.flows.filter((f) => {
+    const p = f.steps[0].page || 0;
+    return p >= start && p < end;
+  });
+}
+
 const PANELS = {
-  notes: (p) => (p.notes.length ? `<div class="c-notes">${p.notes.map((s) => `
-    <article class="c-card"><h3 class="c-label flex items-center gap-2">${escapeHtml(s.title)} ${page(s.page)}</h3>
-      <ul>${s.points.map((pt) => `<li>${escapeHtml(pt.text)} ${page(pt.page)}</li>`).join("")}</ul></article>`).join("")}</div>` : empty("notes")),
+  notes: (p) => (p.notes.length ? `<div class="c-notes">${p.notes.map((s, i) => `
+    <section class="c-note" data-topic="${topicOf(p, s.page, (i % 8) + 1)}">
+      <h4 class="c-note__title"><span class="c-topic-dot" aria-hidden="true"></span>${escapeHtml(s.title)} ${page(s.page)}</h4>
+      <ul>${s.points.map((pt) => `<li>${escapeHtml(pt.text)} ${page(pt.page)}</li>`).join("")}</ul>
+      ${diagramsFor(p, i).map((f) => `<div class="c-note__diagram"><p class="c-meta">${escapeHtml(f.title)}</p>${diagram(p, f, true)}</div>`).join("")}
+    </section>`).join("")}</div>` : empty("notes")),
   sticky: (p) => (p.sticky.length ? `<ul class="c-stickies">${p.sticky.map((n) => `
-    <li class="c-sticky" data-tone="${n.tone}"><p class="c-sticky__title">${escapeHtml(n.title)}</p>
+    <li class="c-sticky" data-topic="${topicOf(p, n.page, n.tone)}"><p class="c-sticky__title">${escapeHtml(n.title)}</p>
       <p class="c-sticky__text">${escapeHtml(n.text)}</p>${page(n.page)}</li>`).join("")}</ul>` : empty("sticky notes")),
-  mindmap: (p) => (p.mindmap ? mindmap(p.mindmap) : empty("a mind map")),
+  mindmap: (p) => (p.mindmap ? mindmap(p.mindmap, p) : empty("a mind map")),
   flow: (p) => (p.flows.length ? p.flows.map((f) => `
-    <section class="flex flex-col gap-3" style="margin-bottom: var(--space-8)"><h3 class="c-label">${escapeHtml(f.title)}</h3>
-      <ol class="c-flow">${f.steps.map((s, i) => `<li class="c-flow__step"><span class="c-flow__num" aria-hidden="true">${i + 1}</span>
-        <p class="c-flow__text"><span class="sr-only">Step ${i + 1}: </span>${escapeHtml(s.text)} ${page(s.page)}</p></li>`).join("")}</ol></section>`).join("")
+    <section class="flex flex-col gap-3" style="margin-bottom: var(--space-8)"><h4 class="c-label">${escapeHtml(f.title)}</h4>
+      ${diagram(p, f, false)}</section>`).join("")
     : empty("a step-by-step process")),
   glossary: (p) => (p.glossary.length ? `<dl class="c-glossary">${p.glossary.map((g) => `
-    <div><dt>${escapeHtml(g.term)} ${page(g.page)}</dt><dd>${escapeHtml(g.definition)}</dd></div>`).join("")}</dl>` : empty("key terms")),
+    <div data-topic="${topicOf(p, g.page)}"><dt><b>${escapeHtml(g.term)}</b> ${page(g.page)}</dt><dd>${escapeHtml(g.definition)}</dd></div>`).join("")}</dl>` : empty("key terms")),
   flashcards: (p) => (p.flashcards.length ? `<p class="c-help" style="margin-bottom: var(--space-3)">Click a card to see the answer.</p>
-    <ul class="c-flashcards">${p.flashcards.map((c, i) => `<li><button type="button" class="c-flashcard" aria-pressed="false" data-card="${i}">
+    <ul class="c-flashcards">${p.flashcards.map((c, i) => `<li><button type="button" class="c-flashcard" data-topic="${topicOf(p, c.page, (i % 8) + 1)}" aria-pressed="false" data-card="${i}">
       <span class="c-flashcard__side">Question ${i + 1}</span><span class="c-flashcard__text">${escapeHtml(c.front)}</span>
       <span class="c-meta">Show answer</span></button></li>`).join("")}</ul>` : empty("flashcards")),
 };
@@ -226,9 +268,12 @@ function box(node, kind) {
 }
 
 /** A two-sided mind map: the topic in the middle, main ideas on both sides, details further out. */
-function mindmap(root) {
+function mindmap(root, pack) {
   const branches = (root.children.length ? root.children : [{ label: "No sections found", children: [] }])
-    .map((b) => ({ ...box(b, "branch"), leaves: (b.children || []).map((l) => box(l, "leaf")) }));
+    .map((b, i) => {
+      const topic = topicOf(pack, b.page, (i % 8) + 1);
+      return { ...box(b, "branch"), topic, leaves: (b.children || []).map((l) => ({ ...box(l, "leaf"), topic })) };
+    });
   for (const b of branches) {
     const leavesH = b.leaves.reduce((s, l) => s + l.h, 0) + GAP_Y * Math.max(0, b.leaves.length - 1);
     b.blockH = Math.max(b.h, leavesH);
@@ -266,7 +311,7 @@ function mindmap(root) {
       b.cy = y + b.blockH / 2;
       b.x = side === "right" ? branchEdgeX : branchEdgeX - b.w;
       nodes.push(b);
-      edges.push(curve(side === "right" ? center.x + center.w : center.x, center.cy, side === "right" ? b.x : b.x + b.w, b.cy));
+      edges.push({ topic: b.topic, d: curve(side === "right" ? center.x + center.w : center.x, center.cy, side === "right" ? b.x : b.x + b.w, b.cy) });
       const leavesH = b.leaves.reduce((s, l) => s + l.h, 0) + GAP_Y * Math.max(0, b.leaves.length - 1);
       let ly = b.cy - leavesH / 2;
       const leafEdgeX = branchEdgeX + dir * (branchW[side] + COL_GAP);
@@ -274,7 +319,7 @@ function mindmap(root) {
         l.cy = ly + l.h / 2;
         l.x = side === "right" ? leafEdgeX : leafEdgeX - l.w;
         nodes.push(l);
-        edges.push(curve(side === "right" ? b.x + b.w : b.x, b.cy, side === "right" ? l.x : l.x + l.w, l.cy));
+        edges.push({ topic: b.topic, d: curve(side === "right" ? b.x + b.w : b.x, b.cy, side === "right" ? l.x : l.x + l.w, l.cy) });
         ly += l.h + GAP_Y;
       }
       y += b.blockH + GROUP_GAP;
@@ -284,10 +329,10 @@ function mindmap(root) {
   const svgNodes = nodes.map((n) => {
     const top = n.cy - n.h / 2;
     const tspans = n.lines.map((line, i) => `<tspan x="${n.x + PAD_X}" y="${top + PAD_Y + LINE_H * i + LINE_H / 2}">${escapeHtml(line)}</tspan>`).join("");
-    return `<g class="c-mindmap__node c-mindmap__node--${n.kind}"><title>${escapeHtml(n.label)}${n.page ? ` (page ${n.page})` : ""}</title>
+    return `<g class="c-mindmap__node c-mindmap__node--${n.kind}"${n.topic ? ` data-topic="${n.topic}"` : ""}><title>${escapeHtml(n.label)}${n.page ? ` (page ${n.page})` : ""}</title>
       <rect x="${n.x}" y="${top}" width="${n.w}" height="${n.h}" rx="${n.kind === "root" ? n.h / 2 : 8}"/><text>${tspans}</text></g>`;
   }).join("");
-  const svgEdges = edges.map((d) => `<path class="c-mindmap__edge" d="${d}"/>`).join("");
+  const svgEdges = edges.map((e) => `<path class="c-mindmap__edge" data-topic="${e.topic}" d="${e.d}"/>`).join("");
   const outline = `<ul class="sr-only">${branches.map((b) => `<li>${escapeHtml(b.label)}<ul>${b.leaves.map((l) => `<li>${escapeHtml(l.label)}</li>`).join("")}</ul></li>`).join("")}</ul>`;
   return `<div class="c-mindmap"><svg viewBox="-2 -2 ${totalW + 4} ${height + 4}" style="width:100%;min-width:${Math.min(totalW, 720)}px;aspect-ratio:${(totalW + 4) / (height + 4)}" role="img" aria-label="Mind map of ${escapeHtml(root.label)}">${svgEdges}${svgNodes}</svg>${outline}</div>`;
 }
@@ -307,7 +352,12 @@ function toMarkdown(p) {
     p.mindmap.children.forEach((s) => { out.push(`  - ${s.label}`, ...s.children.map((l) => `    - ${l.label}`)); });
     out.push("");
   }
-  p.flows.forEach((f) => { out.push(`## ${f.title}`, "", ...f.steps.map((s, i) => `${i + 1}. ${s.text}${pg(s.page)}`), ""); });
+  p.flows.forEach((f) => {
+    const lines = f.kind === "conditions"
+      ? f.steps.map((s) => `- **${s.condition}** → ${s.text}${pg(s.page)}`)
+      : f.steps.map((s, i) => `${i + 1}. ${s.text}${pg(s.page)}`);
+    out.push(`## ${f.title}`, "", ...lines, "");
+  });
   if (p.glossary.length) out.push("## Key terms", "", ...p.glossary.map((g) => `- **${g.term}:** ${g.definition}${pg(g.page)}`), "");
   if (p.flashcards.length) {
     out.push("## Flashcards", "");

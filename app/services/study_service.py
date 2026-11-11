@@ -73,6 +73,7 @@ class StudyService:
             mode=engine.mode,  # type: ignore[arg-type]
             label=builder.label,
             kinds=kinds,
+            topics=content.topics,
             notes=content.notes,
             sticky=content.sticky,
             mindmap=content.mindmap,

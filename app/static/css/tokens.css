@@ -5,62 +5,57 @@
    scripts/check_contrast.py parses the two blocks below.
    ========================================================================== */
 
+/* "Notebook" palette: warm paper, graphite ink, fountain-pen blue, highlighter yellow. */
 :root {
   /* color — light */
-  --color-bg: #FAF8F5;
+  --color-bg: #F5F3EE;
   --color-surface: #FFFFFF;
-  --color-surface-muted: #F2EFEA;
-  --color-border: #E3DED6;
-  --color-border-strong: #C9C2B7;
-  --color-border-input: #8A8478;
-  --color-text: #1F2933;
-  --color-text-muted: #5B6670;
+  --color-surface-muted: #EDEAE3;
+  --color-border: #E2DED5;
+  --color-border-strong: #C8C2B6;
+  --color-border-input: #8C8679;
+  --color-text: #1C1F26;
+  --color-text-muted: #5C6370;
   --color-text-inverse: #FFFFFF;
-  --color-primary: #0F766E;
-  --color-primary-hover: #0B5F58;
-  --color-primary-subtle: #E3F2EF;
-  --color-accent: #A14A07;
-  --color-accent-subtle: #FBEFD9;
-  --color-success: #286B44;
-  --color-success-subtle: #E4F3EA;
-  --color-danger: #B42318;
-  --color-danger-subtle: #FCE8E6;
-  --color-focus: #0F766E;
-  --color-note-1: #FFF4C2;
-  --color-note-2: #E2F4E4;
-  --color-note-3: #E1EEFB;
-  --color-note-4: #FBE4EC;
-  --color-scrim: rgba(31, 41, 51, 0.40);
-  --shadow-sm: 0 1px 2px rgba(31, 41, 51, 0.06);
-  --shadow-md: 0 4px 12px rgba(31, 41, 51, 0.08);
+  --color-primary: #2E4BC6;
+  --color-primary-hover: #233A9E;
+  --color-primary-subtle: #E8ECFA;
+  --color-accent: #8A5200;
+  --color-accent-subtle: #FFF1C2;
+  --color-success: #2B7347;
+  --color-success-subtle: #E3F2E8;
+  --color-danger: #B3261E;
+  --color-danger-subtle: #FBE9E7;
+  --color-focus: #2E4BC6;
+  --color-sidebar: #EFECE5;
+  --color-scrim: rgba(28, 31, 38, 0.40);
+  --shadow-sm: 0 1px 2px rgba(28, 31, 38, 0.06);
+  --shadow-md: 0 4px 12px rgba(28, 31, 38, 0.10);
   color-scheme: light;
 }
 
 [data-theme="dark"] {
-  /* color — dark */
-  --color-bg: #14181C;
-  --color-surface: #1B2127;
-  --color-surface-muted: #222A31;
-  --color-border: #2E3841;
-  --color-border-strong: #44515C;
-  --color-border-input: #6E7C88;
-  --color-text: #E8ECEF;
-  --color-text-muted: #A3AEB8;
-  --color-text-inverse: #0B1F1C;
-  --color-primary: #2DD4BF;
-  --color-primary-hover: #5EE6D3;
-  --color-primary-subtle: #16332F;
-  --color-accent: #F0B35A;
-  --color-accent-subtle: #3A2C14;
-  --color-success: #5CC48A;
-  --color-success-subtle: #17311F;
-  --color-danger: #F28B82;
-  --color-danger-subtle: #3B1D1A;
-  --color-focus: #2DD4BF;
-  --color-note-1: #3A3416;
-  --color-note-2: #1C3424;
-  --color-note-3: #1B2D40;
-  --color-note-4: #3A1E2A;
+  /* color — dark (graphite, not blue-black) */
+  --color-bg: #17181C;
+  --color-surface: #1F2126;
+  --color-surface-muted: #272A30;
+  --color-border: #33363D;
+  --color-border-strong: #4A4E57;
+  --color-border-input: #727784;
+  --color-text: #ECEDEF;
+  --color-text-muted: #A6ABB5;
+  --color-text-inverse: #111733;
+  --color-primary: #9DB0FF;
+  --color-primary-hover: #B9C7FF;
+  --color-primary-subtle: #262D4A;
+  --color-accent: #F2C14E;
+  --color-accent-subtle: #3A3018;
+  --color-success: #6CC48C;
+  --color-success-subtle: #1B3324;
+  --color-danger: #F08A80;
+  --color-danger-subtle: #3D1F1C;
+  --color-focus: #9DB0FF;
+  --color-sidebar: #1B1C21;
   --color-scrim: rgba(0, 0, 0, 0.55);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40);
@@ -68,9 +63,27 @@
 }
 
 :root {
+  /* Study output is always printed on white "paper", in both themes, so these are not themed. */
+  --color-paper: #FFFFFF;
+  --color-paper-ink: #1C1F26;
+  --color-paper-muted: #5A6170;
+  --color-paper-line: #E6E2DA;
+  --color-paper-chip: #F2F0EB;
+
+  /* Topic colors: one per section of a document (bg = soft tint, accent = lines and borders,
+     ink = headings and text on the tint). Flat and muted. */
+  --color-topic-1-bg: #EAF0FC; --color-topic-1-accent: #3D6BD6; --color-topic-1-ink: #1F4290;
+  --color-topic-2-bg: #E6F4EA; --color-topic-2-accent: #2E9455; --color-topic-2-ink: #1B6136;
+  --color-topic-3-bg: #FDF2D8; --color-topic-3-accent: #B07A0C; --color-topic-3-ink: #6E4800;
+  --color-topic-4-bg: #FCE9EC; --color-topic-4-accent: #D04A66; --color-topic-4-ink: #962A42;
+  --color-topic-5-bg: #EFEAFB; --color-topic-5-accent: #7A5BC7; --color-topic-5-ink: #4C3391;
+  --color-topic-6-bg: #E2F3F1; --color-topic-6-accent: #24918A; --color-topic-6-ink: #145E59;
+  --color-topic-7-bg: #FDECDF; --color-topic-7-accent: #D4682A; --color-topic-7-ink: #8F3E0C;
+  --color-topic-8-bg: #ECEFF3; --color-topic-8-accent: #66768A; --color-topic-8-ink: #364352;
+
   /* brand (logo bubble and its check mark; identical in both themes) */
-  --color-brand-highlight: #F0B35A;
-  --color-brand-ink: #0B1F1C;
+  --color-brand-highlight: #F2C14E;
+  --color-brand-ink: #1C1F26;
 
   /* typography */
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -103,6 +116,7 @@
   --border-width: 1px;
   --border-width-dashed: 1.5px;
   --border-width-thick: 2px;
+  --border-width-accent: 4px;
   --underline-offset: 2px;
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;

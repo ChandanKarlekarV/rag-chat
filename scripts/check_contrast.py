@@ -28,9 +28,18 @@ PAIRS: list[tuple[str, str, float]] = [
     ("--color-success", "--color-success-subtle", 4.5),
     ("--color-focus", "--color-surface", 3.0),
     ("--color-border-input", "--color-surface", 3.0),  # WCAG 1.4.11: input outlines
-    # study material: sticky notes and mind-map nodes
-    *[("--color-text", f"--color-note-{i}", 4.5) for i in range(1, 5)],
-    *[("--color-text-muted", f"--color-note-{i}", 4.5) for i in range(1, 5)],
+    ("--color-text", "--color-sidebar", 4.5),
+    ("--color-text-muted", "--color-sidebar", 4.5),
+    # study output: white paper and topic colors (identical in both themes)
+    ("--color-paper-ink", "--color-paper", 4.5),
+    ("--color-paper-muted", "--color-paper", 4.5),
+    ("--color-paper-muted", "--color-paper-chip", 4.5),
+    *[(f"--color-topic-{i}-ink", f"--color-topic-{i}-bg", 4.5) for i in range(1, 9)],
+    *[("--color-paper-ink", f"--color-topic-{i}-bg", 4.5) for i in range(1, 9)],
+    *[("--color-paper-muted", f"--color-topic-{i}-bg", 4.5) for i in range(1, 9)],
+    *[(f"--color-topic-{i}-ink", "--color-paper", 4.5) for i in range(1, 9)],
+    *[("--color-paper", f"--color-topic-{i}-ink", 4.5) for i in range(1, 9)],  # numbers on ink circles
+    *[(f"--color-topic-{i}-accent", "--color-paper", 3.0) for i in range(1, 9)],  # lines and borders
 ]
 
 

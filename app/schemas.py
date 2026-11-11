@@ -249,7 +249,7 @@ class StickyNote(BaseModel):
     title: str = Field(default="Key point", max_length=80)
     text: str = Field(min_length=1, max_length=400)
     page: int | None = None
-    tone: int = Field(default=1, ge=1, le=4)  # which of the four note colours
+    tone: int = Field(default=1, ge=1, le=8)  # topic colour (the UI colours by page/topic)
 
 
 class MindNode(BaseModel):
@@ -261,17 +261,26 @@ class MindNode(BaseModel):
 
 
 class FlowStep(BaseModel):
-    """One step of a process."""
+    """One step of a process, or one "if this → then that" rule."""
 
     text: str = Field(min_length=1, max_length=400)
     page: int | None = None
+    condition: str | None = Field(default=None, max_length=200)  # set for kind="conditions"
 
 
 class Flow(BaseModel):
-    """A step-by-step process, drawn as a flowchart."""
+    """A diagram: a step-by-step process (flowchart) or a set of conditions and outcomes."""
 
     title: str = Field(min_length=1, max_length=200)
+    kind: Literal["process", "conditions"] = "process"
     steps: list[FlowStep] = Field(min_length=2)
+
+
+class Topic(BaseModel):
+    """A section of the document; the UI gives each one its own colour."""
+
+    title: str
+    page: int
 
 
 class GlossaryTerm(BaseModel):
@@ -300,6 +309,7 @@ class StudyPack(BaseModel):
     mode: Literal["local", "ollama", "api"]
     label: str
     kinds: list[StudyKind]
+    topics: list[Topic] = []  # the document's sections, in order (for topic colours)
     notes: list[NoteSection] = []
     sticky: list[StickyNote] = []
     mindmap: MindNode | None = None

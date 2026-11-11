@@ -36,6 +36,7 @@ from app.schemas import (
     PageText,
     StickyNote,
     StudyKind,
+    Topic,
 )
 
 MAX_SENTENCES = 2000  # embedding budget per document
@@ -158,7 +159,7 @@ _STOP = set(
         "during",
     ]
 )
-TONES = 4
+TONES = 8  # topic colours in the UI
 NOTE_CHARS = 220
 STICKY_CHARS = 170
 LEAF_CHARS = 42
@@ -199,6 +200,7 @@ class StudyContent:
     glossary: list[GlossaryTerm] = field(default_factory=list)
     flashcards: list[Flashcard] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    topics: list[Topic] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- text helpers
@@ -595,6 +597,72 @@ def find_flows(raw_pages: Sequence[PageText], headings: Sequence[Heading], limit
     return flows
 
 
+_PROCEDURE = re.compile(r"^To (?P<goal>[a-z][^,;]{3,80}),\s*(?P<rest>.+)$")
+_VERBS = (
+    "wait|press|hold|switch|turn|open|close|select|tap|click|remove|check|restart|follow|enter|connect|"
+    "disconnect|unplug|plug|reopen|set|choose|go|install|replace|clean|scan|insert|type|save|apply|"
+    "release|reset|confirm|contact|make|use|add|run|start|stop|update|charge|keep|place|attach|log"
+)
+_STEP_SPLIT = re.compile(
+    rf",\s*(?:and\s+)?then\s+|;\s*(?:and\s+)?then\s+|\s+and\s+then\s+|,\s*(?:and\s+)?(?=(?:{_VERBS})\b)"
+)
+_WHEN = re.compile(r"^(?P<cond>(?:When|If|Once|After|Whenever|During|Before)\s.{3,120}?),\s+(?P<then>.{8,})$")
+_MEANS = re.compile(
+    r"^(?P<cond>(?:(?:A|An|The)\s+)?[\w\-]+(?:\s+[\w\-]+){0,7}?)\s+(?:means|indicates)\s+(?P<then>.{6,})$"
+)
+
+
+def _cap(text: str) -> str:
+    text = text.strip().rstrip(".")
+    return text[:1].upper() + text[1:]
+
+
+def find_procedures(sections: list[Section], limit: int = 4) -> list[Flow]:
+    """Procedures written as one sentence: "To restart the system, switch off…, wait…, then…".
+    A following "If …" sentence (what to do when it doesn't work) becomes the last step."""
+    flows: list[Flow] = []
+    for sec in sections:
+        for i, s in enumerate(sec.sentences):
+            m = _PROCEDURE.match(s.text)
+            if not m:
+                continue
+            parts = [p for p in _STEP_SPLIT.split(m.group("rest")) if p and len(p.split()) >= 2]
+            if len(parts) < 2:
+                continue
+            steps = [FlowStep(text=shorten(_cap(p), 160), page=s.page) for p in parts]
+            nxt = sec.sentences[i + 1] if i + 1 < len(sec.sentences) else None
+            if nxt and nxt.text.startswith("If "):
+                steps.append(FlowStep(text=shorten(_cap(nxt.text), 160), page=nxt.page))
+            flows.append(Flow(title=f"How to {m.group('goal').strip()}", steps=steps))
+            if len(flows) >= limit:
+                return flows
+    return flows
+
+
+def find_rules(sections: list[Section], limit: int = 4) -> list[Flow]:
+    """Condition → outcome diagrams: "When the grid fails, …" and "A solid red light means …"."""
+    flows: list[Flow] = []
+    for sec in sections:
+        whens: list[FlowStep] = []
+        means: list[FlowStep] = []
+        for s in sec.sentences:
+            if m := _WHEN.match(s.text):
+                whens.append(
+                    FlowStep(condition=_cap(m.group("cond")), text=shorten(_cap(m.group("then")), 160), page=s.page)
+                )
+            elif (m := _MEANS.match(s.text)) and not m.group("cond").lower().startswith(("this", "that", "it ")):
+                means.append(
+                    FlowStep(condition=_cap(m.group("cond")), text=shorten(_cap(m.group("then")), 160), page=s.page)
+                )
+        if len(means) >= 2:
+            flows.append(Flow(title=f"{sec.title}: what it means", kind="conditions", steps=means[:10]))
+        if len(whens) >= 2:
+            flows.append(Flow(title=f"{sec.title}: what happens when", kind="conditions", steps=whens[:10]))
+        if len(flows) >= limit:
+            break
+    return flows[:limit]
+
+
 # ---------------------------------------------------------------- local builder
 
 
@@ -647,11 +715,14 @@ class LocalStudyBuilder:
             out.sticky = self._sticky(sections, sents, scores, vecs, terms)
         if "mindmap" in kinds:
             out.mindmap = self._mindmap(title, sections, terms, section_keyphrases(sections, title_words), picks)
-        if "flow" in kinds:
-            out.flows = find_flows(raw_pages, headings)
-            if not out.flows:
+        out.topics = [Topic(title=sec.title, page=sec.page) for sec in sections]
+        if "flow" in kinds or "notes" in kinds:  # notes show the diagrams of their section inline
+            numbered = find_flows(raw_pages, headings)
+            found = numbered + find_procedures(sections) + find_rules(sections)
+            out.flows = sorted(found, key=lambda f: (f.steps[0].page or 0, f.kind != "process"))[:8]
+            if "flow" in kinds and not out.flows:
                 out.warnings.append(
-                    "No numbered step-by-step process was found in this document. "
+                    "No step-by-step process or if-then rules were found in this document. "
                     "Ollama or API key mode can describe processes written as plain text."
                 )
         if "flashcards" in kinds:
@@ -873,7 +944,8 @@ class LLMStudyBuilder:
         score_sentences(sections, self.local.embedder)
         context = build_context(sections, local.flows, self.context_chars)
         max_page = max((p.page for p in pages), default=1)
-        out = StudyContent(warnings=[w for w in local.warnings if "numbered" not in w])
+        out = StudyContent(warnings=[w for w in local.warnings if "No step-by-step" not in w], topics=local.topics)
+        out.flows = local.flows  # diagrams shown inside the notes, unless the model writes the flowchart
         written: list[str] = []
         for kind in kinds:
             if self._fill(out, kind, title, context, max_page):
@@ -882,6 +954,9 @@ class LLMStudyBuilder:
                 self._use_local(out, local, kind)
                 if kind != "flow" or local.flows:  # an empty flowchart gets its own message below
                     out.warnings.append(f"{KIND_NAMES[kind]}: made locally (the model's version couldn't be read).")
+        if "flow" in kinds and "flow" in written:
+            # keep the verbatim if-then diagrams found locally next to the model's processes
+            out.flows = out.flows + [f for f in local.flows if f.kind == "conditions"]
         for i, note in enumerate(out.sticky):
             note.tone = i % TONES + 1
         if "flow" in kinds and not out.flows:

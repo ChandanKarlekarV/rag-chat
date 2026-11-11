@@ -50,11 +50,46 @@ def test_local_builder_makes_every_kind_with_pages(sample_pdf):
     title, pages, raw, heads = _sample(sample_pdf)
     out = LocalStudyBuilder(FakeEmbedder()).build(title, pages, raw, heads, ALL)
     assert out.notes and all(p.page for n in out.notes for p in n.points)
-    assert 6 <= len(out.sticky) <= 12 and all(1 <= s.tone <= 4 for s in out.sticky)
+    assert 6 <= len(out.sticky) <= 12 and all(1 <= s.tone <= 8 for s in out.sticky)
     assert out.mindmap and len(out.mindmap.children) >= 5
     assert any(g.term == "Storm Watch" for g in out.glossary)
     assert any("_____" in c.front for c in out.flashcards)
-    assert out.flows == [] and out.warnings  # the sample has no numbered procedure
+    titles = {f.title for f in out.flows}
+    assert "How to restart the system" in titles and "How to pair the gateway" in titles  # prose procedures
+    rules = next(f for f in out.flows if f.kind == "conditions" and "what it means" in f.title)
+    assert any(s.condition == "A solid red light" and s.text.startswith("Thermal shutdown") for s in rules.steps)
+    assert [t.title for t in out.topics][:2] == ["Welcome and Product Overview", "Safety Information"]
+
+
+def test_prose_procedure_and_when_rules():
+    from app.generation.study import Section, Sentence, find_procedures, find_rules
+
+    sec = Section(
+        "Help",
+        2,
+        [
+            Sentence("To reset the router, unplug it, wait ten seconds, then plug it back in.", 2, 0),
+            Sentence("If the light stays red, call support.", 2, 0),
+            Sentence("When the power fails, the router keeps running on its battery.", 2, 0),
+            Sentence("When power returns, the battery recharges.", 3, 0),
+        ],
+    )
+    flow = find_procedures([sec])[0]
+    assert flow.title == "How to reset the router"
+    assert [s.text for s in flow.steps] == [
+        "Unplug it",
+        "Wait ten seconds",
+        "Plug it back in",
+        "If the light stays red, call support",
+    ]
+    rules = find_rules([sec])[0]
+    assert rules.kind == "conditions"
+    assert [s.condition for s in rules.steps] == [
+        "If the light stays red",
+        "When the power fails",
+        "When power returns",
+    ]
+    assert rules.steps[2].page == 3
 
 
 def test_numbered_steps_become_a_flow():
@@ -87,7 +122,7 @@ def test_llm_builder_uses_model_json_and_falls_back(sample_pdf):
     )
     assert out.notes[0].points[0].text == "Keep 90 cm from gas meters."
     assert out.glossary[0].page is None  # invented page numbers are dropped
-    assert out.sticky and any("made locally" in w for w in out.warnings)  # unreadable part → local
+    assert out.sticky and any("made locally" in w for w in out.warnings)  # unreadable part â†’ local
     system, user = llm.calls[0]
     assert "untrusted" in system and "[p. 2]" in user
 
@@ -103,7 +138,7 @@ def test_study_endpoint_local_and_api(h, sample_pdf):
     api = c.post(
         "/study", json={"doc_id": doc["id"], "kinds": ["notes"], "mode": "api"}, headers=CSRF | {"X-LLM-Key": GOOD_KEY}
     )
-    assert api.status_code == 200 and api.json()["mode"] == "api"  # FakeLLM's reply isn't JSON → local fallback
+    assert api.status_code == 200 and api.json()["mode"] == "api"  # FakeLLM's reply isn't JSON â†’ local fallback
     assert any("made locally" in w for w in api.json()["warnings"])
 
 

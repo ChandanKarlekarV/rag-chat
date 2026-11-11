@@ -1,6 +1,6 @@
 # DESIGN_SYSTEM.md — rag-chat UI
 
-Calm, readable, document-first. **No gradients anywhere** (backgrounds, buttons, text, borders, shadows). Flat color, soft neutrals, one accent. Every visual value comes from a token; no raw hex, px or font sizes inside components.
+Calm, readable, document-first. **No gradients anywhere** (backgrounds, buttons, text, borders, shadows). Flat color, soft neutrals, one action color plus a highlighter; study output adds soft per-topic colors on white paper. Every visual value comes from a token; no raw hex, px or font sizes inside components.
 
 ## 1. Principles
 1. **Clarity over decoration.** The answer and its sources are the hero.
@@ -11,50 +11,71 @@ Calm, readable, document-first. **No gradients anywhere** (backgrounds, buttons,
 
 ## 2. Color tokens
 
-Warm paper neutrals + deep teal primary + amber for source highlights. Soft on the eyes, high contrast for text.
+**"Notebook" palette** (redesigned 2026-11-11, replacing the earlier teal-on-dark look, which read as generic): warm paper, graphite ink, a fountain-pen blue for actions and a highlighter yellow for highlights. Dark mode is graphite, not blue-black. Soft on the eyes, high contrast for text. `app/static/css/tokens.css` is the source of truth; the tables below mirror it.
 
 ### Light
 | Token | Value | Use |
 |---|---|---|
-| `--color-bg` | `#FAF8F5` | app background |
+| `--color-bg` | `#F5F3EE` | app background (paper) |
 | `--color-surface` | `#FFFFFF` | cards, inputs, drawer |
-| `--color-surface-muted` | `#F2EFEA` | sidebar, code/snippet blocks, hover rows |
-| `--color-border` | `#E3DED6` | dividers, input borders |
-| `--color-border-strong` | `#C9C2B7` | hover borders |
-| `--color-text` | `#1F2933` | body text |
-| `--color-text-muted` | `#5B6670` | secondary text (≥ 4.5:1 on bg) |
+| `--color-surface-muted` | `#EDEAE3` | code/snippet blocks, hover rows, tab tracks |
+| `--color-sidebar` | `#EFECE5` | sidebar |
+| `--color-border` | `#E2DED5` | dividers |
+| `--color-border-strong` | `#C8C2B6` | hover borders |
+| `--color-border-input` | `#8C8679` | input outlines (≥ 3:1) |
+| `--color-text` | `#1C1F26` | body text (graphite) |
+| `--color-text-muted` | `#5C6370` | secondary text (≥ 4.5:1 on bg) |
 | `--color-text-inverse` | `#FFFFFF` | text on primary |
-| `--color-primary` | `#0F766E` | primary buttons, links, focus ring |
-| `--color-primary-hover` | `#0B5F58` | hover/pressed |
-| `--color-primary-subtle` | `#E3F2EF` | citation chips, selected rows |
-| `--color-accent` | `#B45309` | source highlight text, "needs attention" |
-| `--color-accent-subtle` | `#FBEFD9` | highlighted snippet background |
-| `--color-success` | `#2F7D4F` | ready state |
-| `--color-success-subtle` | `#E4F3EA` | |
-| `--color-danger` | `#B42318` | errors, delete |
-| `--color-danger-subtle` | `#FCE8E6` | |
-| `--color-focus` | `#0F766E` | 2px focus ring |
+| `--color-primary` | `#2E4BC6` | primary buttons, links, focus ring (fountain-pen blue) |
+| `--color-primary-hover` | `#233A9E` | hover/pressed |
+| `--color-primary-subtle` | `#E8ECFA` | citation chips, selected rows |
+| `--color-accent` | `#8A5200` | "needs attention" text |
+| `--color-accent-subtle` | `#FFF1C2` | highlighter: highlighted spans and snippets |
+| `--color-success` / `-subtle` | `#2B7347` / `#E3F2E8` | ready state |
+| `--color-danger` / `-subtle` | `#B3261E` / `#FBE9E7` | errors, delete |
+| `--color-focus` | `#2E4BC6` | 2px focus ring |
 
 ### Dark (`[data-theme="dark"]`, also via `prefers-color-scheme`)
 | Token | Value |
 |---|---|
-| `--color-bg` | `#14181C` |
-| `--color-surface` | `#1B2127` |
-| `--color-surface-muted` | `#222A31` |
-| `--color-border` | `#2E3841` |
-| `--color-border-strong` | `#44515C` |
-| `--color-text` | `#E8ECEF` |
-| `--color-text-muted` | `#A3AEB8` |
-| `--color-primary` | `#2DD4BF` |
-| `--color-primary-hover` | `#5EE6D3` |
-| `--color-text-inverse` | `#0B1F1C` |
-| `--color-primary-subtle` | `#16332F` |
-| `--color-accent` | `#F0B35A` |
-| `--color-accent-subtle` | `#3A2C14` |
-| `--color-success` | `#5CC48A` |
-| `--color-danger` | `#F28B82` |
+| `--color-bg` | `#17181C` |
+| `--color-surface` | `#1F2126` |
+| `--color-surface-muted` | `#272A30` |
+| `--color-sidebar` | `#1B1C21` |
+| `--color-border` | `#33363D` |
+| `--color-border-strong` | `#4A4E57` |
+| `--color-border-input` | `#727784` |
+| `--color-text` | `#ECEDEF` |
+| `--color-text-muted` | `#A6ABB5` |
+| `--color-primary` | `#9DB0FF` |
+| `--color-primary-hover` | `#B9C7FF` |
+| `--color-text-inverse` | `#111733` |
+| `--color-primary-subtle` | `#262D4A` |
+| `--color-accent` | `#F2C14E` |
+| `--color-accent-subtle` | `#3A3018` |
+| `--color-success` / `-subtle` | `#6CC48C` / `#1B3324` |
+| `--color-danger` / `-subtle` | `#F08A80` / `#3D1F1C` |
 
-**Contrast rule:** body text ≥ 4.5:1, large text and UI borders ≥ 3:1. Claude Code must write `scripts/check_contrast.py` that reads the token values and fails if any listed pair is under the threshold (text/bg, text-muted/bg, text-inverse/primary, primary/surface, accent/accent-subtle, danger/danger-subtle) in both themes. Adjust token values, not the rule.
+### Study output: paper and topic colors (identical in both themes)
+Study material is always shown on a white sheet (`.c-paper`), even in dark mode, like printed notes. Each section of the document gets its own topic color, used for its notes border, sticky notes, mind-map branch, diagrams, key terms and flashcards, with a legend at the top. Set `data-topic="1".."8"` on an element; it exposes `--t-bg`, `--t-accent` and `--t-ink`.
+
+| Token | Value | Use |
+|---|---|---|
+| `--color-paper` / `-ink` / `-muted` | `#FFFFFF` / `#1C1F26` / `#5A6170` | sheet, text, secondary text |
+| `--color-paper-line` / `-chip` | `#E6E2DA` / `#F2F0EB` | borders, page chips |
+
+| Topic | bg (tint) | accent (lines) | ink (headings) |
+|---|---|---|---|
+| 1 blue | `#EAF0FC` | `#3D6BD6` | `#1F4290` |
+| 2 green | `#E6F4EA` | `#2E9455` | `#1B6136` |
+| 3 ochre | `#FDF2D8` | `#B07A0C` | `#6E4800` |
+| 4 rose | `#FCE9EC` | `#D04A66` | `#962A42` |
+| 5 violet | `#EFEAFB` | `#7A5BC7` | `#4C3391` |
+| 6 teal | `#E2F3F1` | `#24918A` | `#145E59` |
+| 7 orange | `#FDECDF` | `#D4682A` | `#8F3E0C` |
+| 8 slate | `#ECEFF3` | `#66768A` | `#364352` |
+
+**Contrast rule:** body text ≥ 4.5:1, large text and UI borders ≥ 3:1. `scripts/check_contrast.py` reads the token values and fails if any listed pair is under the threshold, in both themes: text/bg, text-muted/bg and /sidebar, text-inverse/primary, primary/surface, accent/accent-subtle, danger/danger-subtle, and for the paper: ink and muted on paper, ink and paper-ink on every topic tint, white on every topic ink, every topic accent on paper (3:1). Adjust token values, not the rule.
 
 ## 3. Typography
 Font: `Inter`, falling back to `system-ui, -apple-system, "Segoe UI", sans-serif`. Mono: `ui-monospace, "SF Mono", Menlo, monospace`.

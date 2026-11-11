@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="t">
   <title id="t">rag-chat logo: a document with a verified-answer speech bubble</title>
-  <!-- Brand colors mirror the light-theme tokens: primary #0F766E, accent-dark #F0B35A, ink #0B1F1C. -->
-  <rect width="64" height="64" rx="16" fill="#0F766E"/>
+  <!-- Brand colors mirror the light-theme tokens: primary #2E4BC6, accent-dark #F2C14E, ink #1C1F26. -->
+  <rect width="64" height="64" rx="16" fill="#2E4BC6"/>
   <path d="M18 11h16.5L45 21.5V47a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4V15a4 4 0 0 1 4-4z" fill="#FFFFFF"/>
-  <path d="M34.5 11v7.5a3 3 0 0 0 3 3H45z" fill="#BFE3DC"/>
-  <rect x="20" y="27" width="17" height="3" rx="1.5" fill="#0F766E" fill-opacity=".45"/>
-  <rect x="20" y="34" width="13" height="3" rx="1.5" fill="#0F766E" fill-opacity=".45"/>
-  <rect x="20" y="41" width="8" height="3" rx="1.5" fill="#0F766E" fill-opacity=".45"/>
-  <path d="M44 31a12 12 0 1 1-6.9 21.8L31 55l2.1-6A12 12 0 0 1 44 31z" fill="#F0B35A" stroke="#0F766E" stroke-width="3" stroke-linejoin="round"/>
-  <path d="M38.6 43.4l3.7 3.7 7.2-7.4" fill="none" stroke="#0B1F1C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34.5 11v7.5a3 3 0 0 0 3 3H45z" fill="#C9D3F5"/>
+  <rect x="20" y="27" width="17" height="3" rx="1.5" fill="#2E4BC6" fill-opacity=".45"/>
+  <rect x="20" y="34" width="13" height="3" rx="1.5" fill="#2E4BC6" fill-opacity=".45"/>
+  <rect x="20" y="41" width="8" height="3" rx="1.5" fill="#2E4BC6" fill-opacity=".45"/>
+  <path d="M44 31a12 12 0 1 1-6.9 21.8L31 55l2.1-6A12 12 0 0 1 44 31z" fill="#F2C14E" stroke="#2E4BC6" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M38.6 43.4l3.7 3.7 7.2-7.4" fill="none" stroke="#1C1F26" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
