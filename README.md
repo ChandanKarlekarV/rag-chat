@@ -149,6 +149,27 @@ What changed to make long books work. Each fix answers something the first run o
 - **Model-written study material is checked against the book.** Ollama and API key mode write notes a few chapters at a time and map them back to the real chapters. Every item must cite a page, every number and name in it must be on that page, and its words must come from a single sentence there. For a flashcard, the question and the answer must both match that same sentence. This caught a real error from `llama3.2`: a card saying a blue plaque means "closed for restoration", when the book says a blue plaque means open only in summer. Items that fail are dropped and counted in a warning. A kind with too few verified items falls back to the local, quoted version.
 - **Uploads up to 100 MB** (was 20 MB), since long textbooks with images are large.
 
+### A 527-page handbook with an independent answer key
+
+A separately generated *Meridian Labs Operations Handbook* (527 pages, 27 chapters with numbered subsections, no bookmarks, a running header on every page, filler prose, summary tables and "Key fact" lines) came with its own answer key of 81 questions (pages 4–516). The key wasn't written for this app. Run with `scripts/evaluate_long.py --pdf … --answers … --unanswerable …`:
+
+| Step | Result |
+|---|---|
+| Upload + read + split + embed + index | 527 pages → 2,915 chunks in **8–10 s** |
+| 81 questions, Local mode | **81/81 correct facts, 81/81 cited the right page**; median 0.2 s |
+| 12 questions the book can't answer (incl. "Who is the CEO?", "Project Falconer") | **12/12 refused** |
+| Study material, Local mode | 6–7 s: 27 sections, 54 note points (728 words) of which 39 are the book's key facts, 12 sticky notes, a 27-branch mind map, 14 flashcards |
+
+What this test found and fixed:
+- **Wrong person for a role.** "Who is the CEO?" was answered with a project owner's name. Now a "who is the CEO / founder / owner…" answer must come from a sentence that names that role.
+- **Look-alike names.** "Project Falconer" was answered with Project Falcon's budget. Now every specific name in the question must start a word in the passage, so "IP" still matches "IP56".
+- **Study material on a book without bookmarks:**
+  - Chapter titles that wrap onto two lines are joined back together.
+  - Repeated labels ("Summary table", "Checklist") aren't treated as headings.
+  - The cover page doesn't become the top level, and cover or contents text isn't counted as chapter 1.
+  - Sentences cut by page breaks and headings aren't used as notes.
+- **Notes were mostly filler.** Specific sentences (numbers, names) are now always kept when the book is sampled. Stock phrasing repeated across the book is scored down, and "Key fact:" labels are dropped. Two facts with the same wording but different names or numbers count as different points. Result: key facts in the notes went from 5 of 54 to 39 of 54.
+
 ### How the QA model was chosen (development set, earlier single-answer pipeline, CPU)
 
 | QA model | Parameters | Answerable correct | Unanswerable refused | Overall |

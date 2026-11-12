@@ -6,7 +6,7 @@ import os
 import pytest
 
 from app.generation.base import AnswerMode
-from app.generation.extractive import LocalExtractiveProvider, answer_type_ok, split_sentences
+from app.generation.extractive import LocalExtractiveProvider, answer_type_ok, asked_role, split_sentences
 from app.generation.fake import FakeLLM
 from app.generation.prompt import NO_ANSWER_TOKEN
 from app.generation.providers import ApiCredentials
@@ -336,3 +336,28 @@ def test_ollama_unreachable_gives_a_friendly_error(tmp_path, sample_pdf):
         assert name == "error" and data["code"] == "ollama_error" and "isn't running" in data["message"]
         modes = {m["mode"]: m for m in c.get("/chat/modes").json()["modes"]}
         assert modes["ollama"]["available"] is False and "Local mode" in modes["ollama"]["reason"]
+
+
+def test_who_questions_need_the_role_in_the_sentence():
+    """Regression from the 527-page handbook test: a project owner's name is not "the CEO"."""
+    q = "Who is the CEO of Meridian Labs?"
+    assert asked_role(q) == "ceo"
+    owner = "The approved budget for Project Meridian is $327,478, owned by Sara Haddad."
+    assert not answer_type_ok(q, "Sara Haddad", owner)
+    assert answer_type_ok(q, "Ada Park", "Ada Park has been the chief executive since 2021.")
+    assert answer_type_ok("Who owns Project Meridian?", "Sara Haddad", owner) is True  # no role word asked
+    assert answer_type_ok("Who is the owner of Project Meridian?", "Sara Haddad", owner)
+
+
+def test_names_in_the_question_must_be_in_the_passage():
+    """Regression from the 527-page handbook test: "Project Falconer" is not "Project Falcon"."""
+    from app.generation.extractive import names_in, names_present
+
+    falcon = "Key fact: The approved budget for Project Falcon is $100,000, owned by Anita Rao."
+    assert names_in("What is the approved budget for Project Falconer?") == ["Project", "Falconer"]
+    assert names_in("At what temperature does the EV charger stop?") == []  # first word, short acronym
+    assert names_present("What is the IP rating of the H2?", "The H2 is rated IP56.")
+    assert not names_present("What is the approved budget for Project Falconer?", falcon)
+    assert names_present("What is the approved budget for Project Falcon?", falcon)
+    assert names_present("What does error E-214 mean?", "Error E-214 indicates an insulation fault.")
+    assert names_present("how much does it cost?", "anything")  # no names asked: no constraint

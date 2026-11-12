@@ -85,7 +85,10 @@ _NUMBER_UNIT = re.compile(
     re.I,
 )
 # any quantity: "220 metres", "3,915 people", "609 million cubic metres" (the blank covers number + noun)
-_NUMBER_NOUN = re.compile(r"(?<![\w.,])\d[\d,]*(?:\.\d+)?(?:\s+(?:million|thousand|billion))?\s+[a-z]{3,}\b")
+_NUMBER_NOUN = re.compile(
+    r"(?<![\w.,])\d[\d,]*(?:\.\d+)?(?:\s+(?:million|thousand|billion))?\s+"
+    r"(?:[a-z]{3,}\s+(?=(?:days?|weeks?|months?|years?|hours?|minutes?)\b))?[a-z]{3,}\b"
+)
 _DEFINITION = re.compile(
     r"^(?:the |an? )?(?P<term>[A-Za-z][\w'’\-/]*(?:\s+[A-Za-z0-9][\w'’\-/]*){0,4}?)\s+"
     r"(?:is|are|refers to|means|is defined as|is called|stands for)\s+(?:an?|the|when|how|any|used)\b",
@@ -285,10 +288,14 @@ def same_point(a: frozenset[str], b: frozenset[str], threshold: float = 0.75) ->
 
 
 def condense(text: str, limit: int) -> str:
-    """A short-note version of a sentence: lead-ins and short asides in brackets removed, then cut
-    at a clause boundary if still long. Words are only removed, never changed."""
-    text = _PARENS.sub("", " ".join(text.split()))
-    return shorten(text, limit)
+    """A short-note version of a sentence: labels ("Key fact:"), lead-ins and short asides in
+    brackets removed, then cut at a clause boundary if still long. Words are only removed."""
+    text = _LABEL.sub("", _PARENS.sub("", " ".join(text.split())))
+    return shorten(text[:1].upper() + text[1:], limit)
+
+
+_LABEL = re.compile(r"^(?:key fact|fact|note|tip|important|remember|summary|takeaway)\s*:\s*", re.I)
+_EXAMPLE = re.compile(r"^(?:scenario|example|case study|for example|for instance|e\.g\.)\b", re.I)
 
 
 def shorten(text: str, limit: int) -> str:
@@ -335,6 +342,10 @@ def _is_prose(sentence: str) -> bool:
         return False
     if _INLINE_LIST.search(sentence):  # a numbered list flattened into one line (flows read those)
         return False
+    if not (sentence[0].isupper() or sentence[0].isdigit()):  # the tail of a sentence cut by a page break
+        return False
+    if not sentence.rstrip("\"')]").endswith((".", "!", "?")):  # a heading or table cell, not a sentence
+        return False
     letters = sum(ch.isalpha() for ch in sentence)
     return letters / max(len(sentence), 1) > 0.55 and sentence[0].isalnum()
 
@@ -342,13 +353,21 @@ def _is_prose(sentence: str) -> bool:
 # ---------------------------------------------------------------- structure
 
 
+def _section_level(headings: Sequence[Heading], last_page: int) -> int:
+    """The heading level that splits the document into its main sections: the highest level with at
+    least two headings spread over more than one page (a cover page's big title lines, all on page 1,
+    don't count), else the highest level present."""
+    for level in sorted({h.level for h in headings}):
+        pages = {h.page for h in headings if h.level == level}
+        if len(pages) >= 2 and (last_page < 3 or pages != {1}):
+            return level
+    return min(h.level for h in headings)
+
+
 def build_sections(pages: Sequence[PageText], headings: Sequence[Heading]) -> list[Section]:
     """Split the document into sections at its top-level headings (or groups of pages if it has none)."""
     if headings:
-        levels = Counter(h.level for h in headings)
-        top = min(levels)
-        if levels[top] < 2 and len(levels) > 1:
-            top = sorted(levels)[1]
+        top = _section_level(headings, pages[-1].page if pages else 1)
         tops = [h for h in headings if h.level == top]
         subs = [h for h in headings if h.level > top]
     else:
@@ -361,7 +380,9 @@ def build_sections(pages: Sequence[PageText], headings: Sequence[Heading]) -> li
     for i, h in enumerate(tops):
         by_page[h.page].append(i)
     heading_keys = {_norm(h.title) for h in headings}
-    current = 0
+    # Text before the first heading (cover, contents) belongs to no section when that heading isn't on
+    # page 1; otherwise it opens the first section.
+    current = -1 if tops[0].title and tops[0].page > 1 else 0
     for page in pages:
         text = " ".join(_PARA.sub(f" {_PARA_MARK} ", page.text).split())  # one line; paragraphs marked
         flat = text.lower()
@@ -379,6 +400,8 @@ def build_sections(pages: Sequence[PageText], headings: Sequence[Heading]) -> li
             current, prev, skip = i, pos, length
         pieces.append((text[prev + skip :], current))
         for piece, idx in pieces:
+            if idx < 0:
+                continue  # front matter
             for s in _sentences(piece):
                 if _norm(s) not in heading_keys and _is_prose(s):
                     sections[idx].sentences.append(Sentence(s, page.page, idx))
@@ -389,7 +412,11 @@ def build_sections(pages: Sequence[PageText], headings: Sequence[Heading]) -> li
         if not sec.title:
             last = sections[i + 1].page - 1 if i + 1 < len(sections) else pages[-1].page
             sec.title = f"Pages {sec.page}–{last}" if last > sec.page else f"Page {sec.page}"
-    return [s for s in sections if s.sentences] or sections[:1]
+    kept = [s for s in sections if s.sentences] or sections[:1]
+    for i, sec in enumerate(kept):  # renumber: sentences point at their section's new position
+        for s in sec.sentences:
+            s.section = i
+    return kept
 
 
 # ---------------------------------------------------------------- scoring
@@ -410,9 +437,14 @@ def score_sentences(sections: list[Section], embedder: SentenceEmbedder) -> np.n
     """Score each sentence by how central it is to its section and the document. Returns the
     normalised embedding matrix (rows follow `all_sentences(sections)`)."""
     sents = all_sentences(sections)
-    if len(sents) > MAX_SENTENCES:  # keep an even spread across the document
-        step = len(sents) / MAX_SENTENCES
-        keep = {id(sents[int(i * step)]) for i in range(MAX_SENTENCES)}
+    trigrams = _trigram_counts(sents)  # counted on every sentence, before any sampling
+    stock = max(10, len(sents) // 200)  # a word sequence used this often is stock phrasing
+    if len(sents) > MAX_SENTENCES:
+        # Keep every specific sentence (numbers, names: usually the facts worth noting), then an even
+        # spread of the rest. Plain uniform sampling dropped most "Key fact" lines of a 527-page book.
+        specific = _spread([s for s in sents if _specificity(s.text) > 0], MAX_SENTENCES // 2)
+        rest = [s for s in sents if _specificity(s.text) == 0]
+        keep = {id(s) for s in specific} | {id(s) for s in _spread(rest, MAX_SENTENCES - len(specific))}
         for sec in sections:
             sec.sentences = [s for s in sec.sentences if id(s) in keep]
         sents = all_sentences(sections)
@@ -431,14 +463,80 @@ def score_sentences(sections: list[Section], embedder: SentenceEmbedder) -> np.n
         for r in rows:
             s = sents[r]
             s.score = 0.6 * float(vecs[r] @ c) + 0.25 * float(vecs[r] @ doc_c) + 0.15 * _cue(s.text)
+            s.score += 0.25 * _specificity(s.text)
             s.score -= _penalty(s.text, templates[template_key(s.text)])
+            s.score -= 0.3 * _stock_share(s.text, trigrams, stock)
     return vecs
+
+
+def _is_new_point(
+    text: str,
+    section_title: str,
+    sim: float,
+    skeletons: set[str],
+    taken_words: list[frozenset[str]],
+    taken_specs: set[frozenset[str]],
+) -> bool:
+    """Is this sentence a point the notes haven't made yet? A fact (it has names or numbers) is a
+    repeat only if an earlier point has the same names and numbers; other sentences are repeats if
+    they share the wording or meaning of an earlier point."""
+    specs = _specifics(text)
+    if specs:
+        return specs not in taken_specs
+    return (
+        skeleton(text, section_title) not in skeletons
+        and not any(same_point(_word_set(text), w) for w in taken_words)
+        and sim < DUPLICATE_SIM
+    )
+
+
+def _specifics(text: str) -> frozenset[str]:
+    """The numbers and names in a sentence: two sentences with the same wording but different
+    specifics ("Project Falcon … $100,000" / "Project Orchid … $137,913") are different facts."""
+    numbers = re.findall(r"(?<![A-Za-z])\d[\d,.]*\d|(?<![A-Za-z\d])\d(?![\d])", text)
+    names = re.findall(r"(?<!^)(?<![.!?:]\s)\b[A-Z][a-z]+", text)
+    return frozenset(numbers + names)
+
+
+def _spread(items: list[Sentence], n: int) -> list[Sentence]:
+    """At most `n` items, taken evenly from the start to the end of the document."""
+    if len(items) <= n:
+        return items
+    step = len(items) / max(n, 1)
+    return [items[int(i * step)] for i in range(n)]
+
+
+def _specificity(text: str) -> float:
+    """How concrete a sentence is: numbers, amounts and names (0 = none, 1 = three or more)."""
+    count = len(re.findall(r"\d[\d,.]*%?", text)) + len(re.findall(r"(?<!^)(?<![.!?:]\s)\b[A-Z][a-z]+", text))
+    return min(1.0, count / 3)
+
+
+def _trigrams(text: str) -> list[tuple[str, str, str]]:
+    words = re.findall(r"[a-z]+", text.lower())
+    return list(zip(words, words[1:], words[2:], strict=False))
+
+
+def _trigram_counts(sents: list[Sentence]) -> Counter[tuple[str, str, str]]:
+    counts: Counter[tuple[str, str, str]] = Counter()
+    for s in sents:
+        counts.update(set(_trigrams(s.text)))
+    return counts
+
+
+def _stock_share(text: str, counts: Counter[tuple[str, str, str]], threshold: int) -> float:
+    """Share of the sentence made of word sequences repeated all over the document ("…process must be
+    documented before any change to the…"): filler, not a point worth noting."""
+    grams = _trigrams(text)
+    return sum(counts[g] >= threshold for g in grams) / len(grams) if grams else 0.0
 
 
 def _penalty(text: str, template_count: int) -> float:
     """Sentences that make poor notes: they start with a pronoun ("It was founded…" means nothing out of
     context) or follow a pattern repeated across the document (boilerplate with names swapped)."""
     p = 0.3 if _ANAPHORA.match(text) else 0.0
+    if _EXAMPLE.match(text):  # worked examples illustrate a point; they aren't the point
+        p += 0.3
     if template_count > 2:
         p += min(0.3, 0.06 * math.log2(template_count))
     return p
@@ -720,7 +818,7 @@ _VERBS = (
 _STEP_SPLIT = re.compile(
     rf",\s*(?:and\s+)?then\s+|;\s*(?:and\s+)?then\s+|\s+and\s+then\s+|,\s*(?:and\s+)?(?=(?:{_VERBS})\b)"
 )
-_WHEN = re.compile(r"^(?P<cond>(?:When|If|Once|After|Whenever|During|Before)\s.{3,120}?),\s+(?P<then>.{8,})$")
+_WHEN = re.compile(r"^(?P<cond>(?:When|If|Once|After|Whenever)\s.{3,120}?),\s+(?P<then>.{8,})$")
 _MEANS = re.compile(
     r"^(?P<cond>(?:(?:A|An|The)\s+)?[\w\-]+(?:\s+[\w\-]+){0,7}?)\s+(?:means|indicates)\s+(?P<then>.{6,})$"
 )
@@ -770,6 +868,18 @@ def find_procedures(sections: list[Section], limit: int = 60) -> list[Flow]:
     return flows
 
 
+def _distinct_conditions(steps: list[FlowStep]) -> list[FlowStep]:
+    """One rule per condition: a diagram of "If X → …, If X → …" teaches nothing."""
+    seen: set[str] = set()
+    out = []
+    for s in steps:
+        key = _norm(s.condition or "")
+        if key not in seen:
+            seen.add(key)
+            out.append(s)
+    return out
+
+
 def find_rules(sections: list[Section], limit: int = 60) -> list[Flow]:
     """Condition → outcome diagrams: "When the grid fails, …" and "A solid red light means …"."""
     flows: list[Flow] = []
@@ -785,6 +895,7 @@ def find_rules(sections: list[Section], limit: int = 60) -> list[Flow]:
                 means.append(
                     FlowStep(condition=_cap(m.group("cond")), text=shorten(_cap(m.group("then")), 160), page=s.page)
                 )
+        means, whens = _distinct_conditions(means), _distinct_conditions(whens)
         if len(means) >= 2:
             flows.append(Flow(title=f"{sec.title}: what it means", kind="conditions", steps=means[:10]))
         if len(whens) >= 2:
@@ -866,24 +977,24 @@ class LocalStudyBuilder:
         taken: list[int] = []
         skeletons: set[str] = set()
         taken_words: list[frozenset[str]] = []
+        taken_specs: set[frozenset[str]] = set()
         picks: dict[int, list[Sentence]] = {}
         for sec_id, sec in enumerate(sections):
             rows = [index[id(s)] for s in sec.sentences]
+            sims = (vecs[rows] @ vecs[taken].T).max(axis=1) if taken and rows else np.zeros(len(rows))
+            seen = (skeletons, taken_words, taken_specs)
             rows = [
                 r
-                for r in rows
-                if skeleton(sents[r].text, sec.title) not in skeletons
-                and not any(same_point(_word_set(sents[r].text), w) for w in taken_words)
+                for r, sim in zip(rows, sims.tolist(), strict=True)
+                if _is_new_point(sents[r].text, sec.title, sim, *seen)
             ]
-            if taken and rows:
-                sim = (vecs[rows] @ vecs[taken].T).max(axis=1)
-                rows = [r for r, x in zip(rows, sim, strict=True) if x < DUPLICATE_SIM]
             # "It was founded in…" means nothing out of context: never a note point
             rows = [r for r in rows if not _ANAPHORA.match(sents[r].text)]
             k = min(per_section, max(1, round(len(rows) / 4)))
             chosen = sorted(mmr(rows, scores, vecs, k), key=lambda r: (sents[r].page, r))
             taken += chosen
             skeletons |= {skeleton(sents[r].text, sec.title) for r in chosen}
+            taken_specs |= {_specifics(sents[r].text) for r in chosen}
             taken_words += [_word_set(sents[r].text) for r in chosen]
             picks[sec_id] = [sents[r] for r in chosen]
         return picks
@@ -907,21 +1018,43 @@ class LocalStudyBuilder:
         n = min(12, max(6, 2 * len(sections)))
         pool: list[int] = []  # one sentence per point (wording and meaning), best first
         words: list[frozenset[str]] = []
-        for r in np.argsort(-(scores + boost)).tolist()[:600]:
+        per_section: Counter[int] = Counter()  # at most 3 candidates per section, so notes cover the book
+        seen_specs: set[frozenset[str]] = set()
+        for r in np.argsort(-(scores + boost)).tolist()[:1500]:
             ws = _word_set(sents[r].text)
-            if any(same_point(ws, w) for w in words) or (pool and float((vecs[pool] @ vecs[r]).max()) >= DUPLICATE_SIM):
+            if per_section[sents[r].section] >= 3 or _ANAPHORA.match(sents[r].text):
+                continue
+            specs = _specifics(sents[r].text)
+            if specs:  # a fact: only a repeat if it has the same names and numbers
+                if specs in seen_specs:
+                    continue
+                seen_specs.add(specs)
+            elif any(same_point(ws, w) for w in words) or (
+                pool and float((vecs[pool] @ vecs[r]).max()) >= DUPLICATE_SIM
+            ):
                 continue
             words.append(ws)
             pool.append(r)
+            per_section[sents[r].section] += 1
         chosen = sorted(mmr(pool, scores + boost, vecs, n, lam=0.6), key=lambda r: (sents[r].page, r))
         notes: list[StickyNote] = []
         for r in chosen:
             s = sents[r]
-            hit = next((t.term for t in terms if re.search(rf"\b{re.escape(t.term)}\b", s.text, re.I)), "")
+            hit = next(
+                (
+                    t.term
+                    for t in terms
+                    if t.definition is not None and re.search(rf"\b{re.escape(t.term)}\b", s.text, re.I)
+                ),
+                "",
+            )
             title = hit or sections[s.section].title
             notes.append(
                 StickyNote(
-                    title=_label(title, 40), text=shorten(s.text, STICKY_CHARS), page=s.page, tone=s.section % TONES + 1
+                    title=_label(title, 40),
+                    text=condense(s.text, STICKY_CHARS),
+                    page=s.page,
+                    tone=s.section % TONES + 1,
                 )
             )
         return notes
@@ -972,11 +1105,11 @@ class LocalStudyBuilder:
                 m = _NUMBER_UNIT.search(s.text) or _NUMBER_NOUN.search(s.text)
                 if not m or len(cards) >= 14:
                     continue
-                short = shorten(s.text, NOTE_CHARS)
+                short = condense(s.text, NOTE_CHARS)
                 if m.group(0) not in short:
                     continue
                 cards.append(
-                    Flashcard(front=short.replace(m.group(0), "_____", 1), back=m.group(0).strip(), page=s.page)
+                    Flashcard(front=short.replace(m.group(0), "_____", 1), back=m.group(0).strip(" ,;"), page=s.page)
                 )
         return cards
 

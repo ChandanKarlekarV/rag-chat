@@ -66,11 +66,128 @@ def sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
-def answer_type_ok(question: str, span_text: str) -> bool:
-    """Reject spans of the wrong type: price questions need money, "how many" needs a number."""
+def answer_type_ok(question: str, span_text: str, sentence: str | None = None) -> bool:
+    """Reject spans of the wrong type: price questions need money, "how many" needs a number, and
+    "who is the CEO / founder / owner…" needs a sentence that actually mentions that role (a name
+    from a sentence about something else is not an answer: measured on a 527-page test handbook,
+    "Who is the CEO?" was answered with a project owner's name)."""
     if _ASKS_PRICE.search(question) and not _MONEY.search(span_text):
         return False
-    return not (_ASKS_COUNT.search(question) and not _NUMBER.search(span_text))
+    if _ASKS_COUNT.search(question) and not _NUMBER.search(span_text):
+        return False
+    role = asked_role(question)
+    return role is None or sentence is None or any(stem in sentence.lower() for stem in _ROLES[role])
+
+
+_ROLES: dict[str, tuple[str, ...]] = {
+    "ceo": ("ceo", "chief executive"),
+    "cfo": ("cfo", "chief financial"),
+    "cto": ("cto", "chief technology"),
+    "founder": ("found",),
+    "owner": ("own",),
+    "manager": ("manag",),
+    "director": ("director",),
+    "president": ("president",),
+    "chair": ("chair",),
+    "chairman": ("chair",),
+    "chairperson": ("chair",),
+    "head": ("head",),
+    "lead": ("lead",),
+    "leader": ("lead",),
+    "author": ("author", "written by", "wrote"),
+    "inventor": ("invent",),
+    "designer": ("design",),
+    "architect": ("architect",),
+    "sponsor": ("sponsor",),
+}
+_WHO = re.compile(r"\bwho\b", re.I)
+
+
+_NAME = re.compile(r"\b[A-Z][A-Za-z0-9\-]*[A-Za-z0-9]\b")
+_NOT_NAMES = {
+    "What",
+    "Which",
+    "Who",
+    "Whom",
+    "Whose",
+    "When",
+    "Where",
+    "Why",
+    "How",
+    "Is",
+    "Are",
+    "Was",
+    "Were",
+    "Do",
+    "Does",
+    "Did",
+    "Can",
+    "Could",
+    "Should",
+    "Would",
+    "Will",
+    "The",
+    "A",
+    "An",
+    "In",
+    "On",
+    "For",
+    "Of",
+    "To",
+    "I",
+    "My",
+    "Please",
+    "Tell",
+    "Explain",
+    "Describe",
+    "List",
+    "Give",
+    "Summarize",
+    "Summarise",
+    "And",
+    "Or",
+}
+
+
+def names_in(question: str) -> list[str]:
+    """Specific names the question asks about ("Project Falconer", "E-214", "H2"). Question words,
+    the question's first word (capitalised anyway) and short acronyms ("EV", "IP", often written out
+    or as part of a code in the text) are not counted."""
+    out = []
+    for m in _NAME.finditer(question):
+        word = m.group(0).removesuffix("'s")
+        has_digit = any(ch.isdigit() for ch in word)
+        if word in _NOT_NAMES or (m.start() == 0 and not has_digit):
+            continue
+        if word.isupper() and len(word) <= 3 and not has_digit:
+            continue
+        out.append(word)
+    return out
+
+
+def names_present(question: str, passage: str) -> bool:
+    """Every specific name in the question starts a word in the passage ("IP" matches "IP56"). A
+    question about "Project Falconer" must not be answered from a passage about "Project Falcon"
+    (measured on the 527-page test handbook)."""
+    return all(re.search(rf"(?<![\w-]){re.escape(n)}", passage, re.I) for n in names_in(question))
+
+
+def asked_role(question: str) -> str | None:
+    """The role a "who" question asks about ("Who is the CEO of …" → "ceo"), if any."""
+    if not _WHO.search(question):
+        return None
+    for word in re.findall(r"[a-z]+", question.lower()):
+        if word in _ROLES:
+            return word
+    return None
+
+
+def sentence_at(text: str, start: int) -> str:
+    """The sentence of `text` that contains character `start`."""
+    for s in split_sentences(text, 0):
+        if s.start <= start < s.end:
+            return s.text
+    return text
 
 
 def split_sentences(text: str, source: int) -> list[Sentence]:
@@ -137,7 +254,10 @@ class LocalExtractiveProvider:
             ranked.append((self.qa_weight * qa + (1 - self.qa_weight) * rr, qa, sp))
         ranked.sort(key=lambda x: x[0], reverse=True)
         for _, qa, sp in ranked:
-            if answer_type_ok(question, chunks[sp.source - 1].chunk.text[sp.start : sp.end]):
+            text = chunks[sp.source - 1].chunk.text
+            if not names_present(question, text):
+                continue
+            if answer_type_ok(question, text[sp.start : sp.end], sentence_at(text, sp.start)):
                 return sp, qa
         return None
 

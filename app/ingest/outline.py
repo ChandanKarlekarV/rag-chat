@@ -62,20 +62,38 @@ def _font_headings(lines: list[_Line], pages: int) -> list[Heading]:
         return []
     repeats = Counter(re.sub(r"\d+", "#", ln.text.lower()) for ln in lines)
     found: list[_Line] = []
-    for ln in lines:
+    last_index = -2
+    for i, ln in enumerate(lines):
         text = ln.text
         if not (3 <= len(text) <= _MAX_HEADING_CHARS) or not _HAS_LETTER.search(text) or text.endswith((".", ",", ";")):
             continue
         if pages >= 3 and repeats[re.sub(r"\d+", "#", text.lower())] > pages / 2:
             continue  # running header or footer
         bigger = ln.size >= body * 1.15
-        if bigger or (ln.bold and ln.size >= body and len(text) <= 60):
+        if not (bigger or (ln.bold and ln.size >= body and len(text) <= 60)):
+            continue
+        prev = found[-1] if found else None
+        if prev and last_index == i - 1 and prev.page == ln.page and prev.size == ln.size and prev.bold == ln.bold:
+            # a heading wrapped onto a second line: "Chapter 1. Corporate Governance and" + "Board Operations"
+            found[-1] = _Line(prev.page, f"{prev.text} {text}", prev.size, prev.bold)
+        else:
             found.append(ln)
+        last_index = i
+    # Labels repeated throughout the book ("Summary table", "Checklist") aren't structure.
+    labels = Counter(_key(ln.text) for ln in found)
+    found = [ln for ln in found if labels[_key(ln.text)] < 3 and _key(ln.text) not in _NOT_HEADINGS]
     if not found:
         return []
     sizes = sorted({ln.size for ln in found}, reverse=True)
     level = {size: min(i + 1, 3) for i, size in enumerate(sizes)}
     return [Heading(page=ln.page, level=level[ln.size], title=ln.text) for ln in found]
+
+
+_NOT_HEADINGS = {"table of contents", "contents", "index", "list of figures", "list of tables"}
+
+
+def _key(text: str) -> str:
+    return re.sub(r"\d+", "#", " ".join(text.lower().split()))
 
 
 def extract_outline(data: bytes) -> tuple[str, list[Heading]]:
