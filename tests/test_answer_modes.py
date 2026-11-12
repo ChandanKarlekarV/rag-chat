@@ -1,4 +1,4 @@
-"""Answer modes (ANSWER_MODES.md section 9): router, endpoints, extractive provider, BYOK, SSE contract, Ollama."""
+"""Answer modes (docs/ANSWER_MODES.md section 9): router, endpoints, extractive provider, BYOK, SSE contract, Ollama."""
 
 import logging
 import os

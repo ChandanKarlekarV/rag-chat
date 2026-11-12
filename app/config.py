@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_url: str = ""  # empty -> sqlite file inside data_dir
     data_dir: Path = Path("./data")
 
-    # --- answer modes (ANSWER_MODES.md) ---
+    # --- answer modes (docs/ANSWER_MODES.md) ---
     # Local (extractive) mode. Most accurate on our eval (see README); smaller options:
     # deepset/roberta-base-squad2, distilbert-base-cased-distilled-squad (no "no answer" training).
     qa_model: str = "deepset/deberta-v3-large-squad2"

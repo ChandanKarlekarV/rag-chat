@@ -1,6 +1,6 @@
 """Local extractive provider: answers by quoting the PDF, never by generating text.
 
-Pipeline after the shared retrieval and gate (ANSWER_MODES.md section 2):
+Pipeline after the shared retrieval and gate (docs/ANSWER_MODES.md section 2):
 
 1. An extractive QA model (`ExtractiveReader`, SQuAD 2.0) proposes the best answer span per chunk
    together with its "no answer" margin; `qa_score = sigmoid(margin)` is the probability-like

@@ -60,7 +60,12 @@ def create_app(container: Container | None = None) -> FastAPI:
         log.info("rag-chat ready")
         yield
 
-    app = FastAPI(title="rag-chat", version="2.0.0", description="Chat with your PDFs.", lifespan=lifespan)
+    app = FastAPI(
+        title="rag-chat",
+        version="3.0.0",
+        description="Chat with your PDFs and turn them into study notes, with page citations.",
+        lifespan=lifespan,
+    )
 
     @app.middleware("http")
     async def request_id(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

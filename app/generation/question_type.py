@@ -1,4 +1,4 @@
-"""Tiny rule-based question classifier: factoid | summary | explain (ANSWER_MODES.md section 2.5)."""
+"""Tiny rule-based question classifier: factoid | summary | explain (docs/ANSWER_MODES.md section 2.5)."""
 
 import re
 

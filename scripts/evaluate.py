@@ -1,6 +1,6 @@
 """Evaluate retrieval, every answer mode, and follow-up rewriting on tests/eval_set.json.
 
-Prints Markdown tables (ANSWER_MODES.md section 8):
+Prints Markdown tables (docs/ANSWER_MODES.md section 8):
 
 1. Retrieval: Hit@1, Hit@5, MRR for vector-only, hybrid, hybrid + rerank; gate fallback accuracy.
 2. Answers per mode (Local always; Ollama when reachable; API when ANTHROPIC_API_KEY is set,

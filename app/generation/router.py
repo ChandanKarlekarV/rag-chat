@@ -1,4 +1,4 @@
-"""Pick the answer provider for a request (ANSWER_MODES.md sections 1 and 5).
+"""Pick the answer provider for a request (docs/ANSWER_MODES.md sections 1 and 5).
 
 Auto-selection: an API key is available (the user's from Settings, or the server's) → API;
 else Ollama is reachable → Ollama; else Local. A mode the user chose explicitly (per request or

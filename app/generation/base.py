@@ -1,4 +1,4 @@
-"""Answer-provider protocol shared by every answer mode (ANSWER_MODES.md section 5).
+"""Answer-provider protocol shared by every answer mode (docs/ANSWER_MODES.md section 5).
 
 Every provider gets the same retrieved chunks (same retrieval and no-answer gate for all modes)
 and yields the same event types, so the chat service and the frontend have one code path:
@@ -70,7 +70,7 @@ class AnswerResult(BaseModel):
 
 
 def confidence_words(confidence: float | None) -> str | None:
-    """Show confidence as words, not a raw number (ANSWER_MODES.md section 7)."""
+    """Show confidence as words, not a raw number (docs/ANSWER_MODES.md section 7)."""
     if confidence is None:
         return None
     if confidence >= 0.85:

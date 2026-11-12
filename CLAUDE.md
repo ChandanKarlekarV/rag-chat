@@ -14,7 +14,7 @@
 - Fix deprecation warnings; they usually mean you used an old API.
 
 ## Project conventions
-- Architecture: see ARCHITECTURE.md. UI: see DESIGN_SYSTEM.md. They are binding.
+- Architecture: see docs/ARCHITECTURE.md. UI: see docs/DESIGN_SYSTEM.md. They are binding.
 - No gradients in the UI. No raw hex outside the token block.
 - Layering: api → services → (ingest | retrieval | generation | db). Never import upward.
 - Secrets only from env. Never log document text.

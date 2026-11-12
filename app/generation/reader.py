@@ -5,7 +5,7 @@ questions; default `deepset/deberta-v3-large-squad2`). For each retrieved passag
 candidate span against the model's "no answer" score (the [CLS] position) and reports the margin.
 
 Implemented with `AutoTokenizer` / `AutoModelForQuestionAnswering` (verified against the installed
-transformers 5.22.2). The `question-answering` pipeline that ANSWER_MODES.md mentions is no longer
+transformers 5.22.2). The `question-answering` pipeline that docs/ANSWER_MODES.md mentions is no longer
 in transformers 5.x (absent from the package and from the current pipeline docs), so the
 `handle_impossible_answer` behaviour is implemented here explicitly via the no-answer margin.
 Runs on the GPU when one is available (see app/devices.py).
