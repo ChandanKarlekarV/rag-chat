@@ -11,6 +11,16 @@ $pidFile = Join-Path $dataDir "server.pid"
 $logFile = Join-Path $dataDir "server.log"
 $url = "http://127.0.0.1:8000"
 
+function Open-App {
+    # Prefer Google Chrome; fall back to the default browser if Chrome isn't installed.
+    $chrome = @(
+        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+        "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if ($chrome) { Start-Process -FilePath $chrome -ArgumentList $url } else { Start-Process $url }
+}
+
 function Test-Ready {
     try { return (Invoke-WebRequest "$url/health" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { return $false }
 }
@@ -23,7 +33,7 @@ New-Item -ItemType Directory -Force $dataDir | Out-Null
 
 if (Test-Ready) {
     Write-Host "rag-chat is already running." -ForegroundColor Green
-    if (-not $NoBrowser) { Start-Process $url }
+    if (-not $NoBrowser) { Open-App }
     exit 0
 }
 
@@ -38,7 +48,7 @@ for ($i = 0; $i -lt 120; $i++) {
     if (Test-Ready) {
         $health = Invoke-RestMethod "$url/health"
         Write-Host "rag-chat is ready at $url (models on: $($health.device))." -ForegroundColor Green
-        if (-not $NoBrowser) { Start-Process $url }
+        if (-not $NoBrowser) { Open-App }
         exit 0
     }
     if ($proc.HasExited) {

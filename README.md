@@ -43,7 +43,7 @@ python -m venv .venv
 copy .env.example .env
 ```
 
-Then double-click **`Start rag-chat.bat`**. It starts the app in the background, waits until the models are loaded (20–40 seconds the first time) and opens http://127.0.0.1:8000. **`Stop rag-chat.bat`** stops it and frees all CPU, RAM and GPU memory.
+Then double-click **`Start rag-chat.bat`**. It starts the app in the background, waits until the models are loaded (20–40 seconds the first time) and opens http://127.0.0.1:8000 in Google Chrome (or your default browser if Chrome isn't installed). **`Stop rag-chat.bat`** stops it and frees all CPU, RAM and GPU memory.
 
 ### macOS / Linux
 
@@ -217,7 +217,8 @@ Tests use fakes for the models and `fakeredis` by default. Set `TEST_DATABASE_UR
 
 ## Security and privacy
 
-- With no API key, nothing leaves your machine: models run locally and documents stay in `data/`.
+- **There is no central server.** Everyone who uses rag-chat runs their own copy on their own computer. Their PDFs, accounts and conversations are stored only in that copy's `data/` folder (git-ignored), and never reach the author, GitHub or anyone else.
+- With no API key, nothing leaves your machine: models run locally and documents stay in `data/`. Chroma's usage telemetry is turned off. The only network use is the one-time model download from Hugging Face and the web fonts and layout library the page loads.
 - In LLM modes, only the question and the top 5 passages are sent to the provider. A pasted key stays in the browser, travels per request in a header, and is never stored or logged by the server (covered by tests).
 - Passwords use argon2id. Sessions are httpOnly, SameSite cookies. State-changing requests need a CSRF header, and CORS is off.
 - Every search is filtered by user, and other users' resources return 404.
