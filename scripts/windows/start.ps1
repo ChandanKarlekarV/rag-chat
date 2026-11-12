@@ -37,6 +37,14 @@ if (Test-Ready) {
     exit 0
 }
 
+# Once the three models are downloaded, run fully offline: no internet, no account, no API key.
+$hub = Join-Path $env:USERPROFILE ".cache\huggingface\hub"
+$models = "models--BAAI--bge-small-en-v1.5", "models--cross-encoder--ms-marco-MiniLM-L-6-v2", "models--deepset--deberta-v3-large-squad2"
+if (-not ($models | Where-Object { -not (Test-Path (Join-Path $hub $_)) })) {
+    $env:HF_HUB_OFFLINE = "1"
+    $env:TRANSFORMERS_OFFLINE = "1"
+}
+
 Write-Host "Starting rag-chat (loading the models takes about 20-40 seconds)..."
 $proc = Start-Process -FilePath $python `
     -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000" `

@@ -15,8 +15,9 @@
       document.documentElement.dataset.theme = dark ? "dark" : "light";
     })();
   </script>
-  <!-- Tailwind v3 Play CDN (verified syntax: v3.tailwindcss.com/docs/installation/play-cdn). Layout utilities only. -->
-  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <!-- Tailwind v3 Play script, bundled in /static/vendor so the page works offline and makes no
+       third-party requests (syntax: v3.tailwindcss.com/docs/installation/play-cdn). Layout utilities only. -->
+  <script src="/static/vendor/tailwind-play-3.4.16.js"></script>
   <script>
     tailwind.config = {
       corePlugins: { preflight: false },
@@ -35,8 +36,6 @@
       } }
     };
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
   <link rel="stylesheet" href="/static/css/tokens.css" />
   <link rel="stylesheet" href="/static/css/components.css" />
 </head>

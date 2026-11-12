@@ -54,7 +54,7 @@ cp .env.example .env
 uvicorn app.main:app      # http://localhost:8000, API docs at /docs
 ```
 
-The first start downloads the models from Hugging Face (about 2.5 GB). After that it runs offline.
+The first start downloads the models from Hugging Face (about 2.5 GB). After that it runs fully offline, with no account, API key or internet connection.
 
 ### Docker
 
@@ -218,7 +218,7 @@ Tests use fakes for the models and `fakeredis` by default. Set `TEST_DATABASE_UR
 ## Security and privacy
 
 - **There is no central server.** Everyone who uses rag-chat runs their own copy on their own computer. Their PDFs, accounts and conversations are stored only in that copy's `data/` folder (git-ignored), and never reach the author, GitHub or anyone else.
-- With no API key, nothing leaves your machine: models run locally and documents stay in `data/`. Chroma's usage telemetry is turned off. The only network use is the one-time model download from Hugging Face and the web fonts and layout library the page loads.
+- With no API key, nothing leaves your machine: models run locally and documents stay in `data/`. Chroma's usage telemetry is turned off, the page's layout library is bundled in the app and it uses your system font, so the page makes no third-party requests. The only network use is the one-time model download from Hugging Face; after that, `Start rag-chat.bat` runs fully offline. Verified: uploading a PDF and asking a question opened no connection to any outside address.
 - In LLM modes, only the question and the top 5 passages are sent to the provider. A pasted key stays in the browser, travels per request in a header, and is never stored or logged by the server (covered by tests).
 - Passwords use argon2id. Sessions are httpOnly, SameSite cookies. State-changing requests need a CSRF header, and CORS is off.
 - Every search is filtered by user, and other users' resources return 404.

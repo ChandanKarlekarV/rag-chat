@@ -42,7 +42,7 @@ jobs:
       - name: Contrast (WCAG AA tokens)
         run: python scripts/check_contrast.py
       - name: No gradients in the UI
-        run: "! grep -rni gradient app/static"
+        run: "! grep -rni gradient app/static --exclude-dir=vendor"  # vendor/ = bundled third-party Tailwind
       - name: Migrations apply cleanly
         run: |
           python -c "from app.db.session import Database; Database('sqlite:///ci.db').migrate()"
