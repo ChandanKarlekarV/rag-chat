@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ChandanKarlekarV/rag-chat/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ChandanKarlekarV/rag-chat/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-2E4BC6">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.162-2E4BC6">
   <img alt="No API key required" src="https://img.shields.io/badge/API%20key-not%20required-2B7347">
