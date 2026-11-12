@@ -10,7 +10,7 @@ export class ApiError extends Error {
 
 const FRIENDLY = {
   0: "You appear to be offline. Check your connection and try again.",
-  413: "That file is too large. The limit is 20 MB.",
+  413: "That file is too large. The limit is 100 MB.",
   500: "Something went wrong on our side. Please try again.",
 };
 

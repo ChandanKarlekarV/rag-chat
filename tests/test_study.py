@@ -61,6 +61,43 @@ def test_local_builder_makes_every_kind_with_pages(sample_pdf):
     assert [t.title for t in out.topics][:2] == ["Welcome and Product Overview", "Safety Information"]
 
 
+def test_long_books_get_short_deduplicated_notes():
+    """60 chapters that repeat the same sentences with a noun swapped: notes stay within the budget,
+    a repeated point appears once, pronoun-led sentences are avoided, diagrams are merged."""
+    from app.generation.study import NOTES_BUDGET, Section, Sentence, dedupe_flows, find_procedures
+
+    sections = []
+    for i in range(60):
+        noun = f"widget{i}"
+        sections.append(
+            Section(
+                f"Chapter {i}",
+                i + 1,
+                [
+                    Sentence(f"A heritage {noun} is a {noun} listed in the register because of its age.", i + 1, i),
+                    Sentence(f"It was built in {1900 + i} by the {noun} guild of the northern towns.", i + 1, i),
+                    Sentence(f"The {noun} hall holds {100 + i} meetings each year for local members.", i + 1, i),
+                    Sentence(
+                        f"To book a {noun} tour, fill in the form, wait for a reply, then pay at the desk.", i + 1, i
+                    ),
+                    Sentence(f"Members of the {noun} society meet in spring to plan the summer markets.", i + 1, i),
+                ],
+            )
+        )
+    from app.generation import study
+
+    vecs = study.score_sentences(sections, FakeEmbedder())
+    sents = study.all_sentences(sections)
+    scores = __import__("numpy").array([s.score for s in sents])
+    picks = LocalStudyBuilder._pick_notes(sections, sents, scores, vecs, {id(s): i for i, s in enumerate(sents)})
+    points = [s for chosen in picks.values() for s in chosen]
+    assert len(points) <= 2 * len(sections) and len(points) <= max(NOTES_BUDGET, 2 * len(sections))
+    assert sum("heritage" in s.text for s in points) <= 1  # the same point once, not 60 times
+    assert not any(s.text.startswith("It ") for s in points)
+    flows = dedupe_flows(find_procedures(sections))
+    assert len(flows) == 1 and "the same in 59 other places" in flows[0].title
+
+
 def test_prose_procedure_and_when_rules():
     from app.generation.study import Section, Sentence, find_procedures, find_rules
 
@@ -113,15 +150,31 @@ def test_llm_builder_uses_model_json_and_falls_back(sample_pdf):
     title, pages, raw, heads = _sample(sample_pdf)
     reply = {
         "notes": [{"title": "Safety", "page": 2, "points": [{"text": "Keep 90 cm from gas meters.", "page": 2}]}],
-        "glossary": [{"term": "Storm Watch", "definition": "Charges ahead of storms.", "page": 999}],
+        "glossary": [
+            {"term": "Storm Watch", "definition": "Charges ahead of storms.", "page": 999},
+            {"term": "LFP", "definition": "Lithium iron phosphate cells.", "page": 1},
+            {"term": "Backup reserve", "definition": "Energy kept for outages.", "page": 5},
+            {
+                "term": "Emergency Stop",
+                "definition": "The red button on the right-hand side of the enclosure.",
+                "page": 2,
+            },
+            {"term": "Warranty", "definition": "Covers the battery for 25 years.", "page": 9},  # wrong number
+        ],
         "sticky": "not a list",
     }
     llm = FakeLLM(completion=json.dumps(reply))
     out = LLMStudyBuilder(llm, LocalStudyBuilder(FakeEmbedder()), 4000).build(
         title, pages, raw, heads, ["notes", "glossary", "sticky"]
     )
-    assert out.notes[0].points[0].text == "Keep 90 cm from gas meters."
-    assert out.glossary[0].page is None  # invented page numbers are dropped
+    safety = next(n for n in out.notes if n.title == "Safety Information")  # mapped to the real section
+    assert safety.points[0].text == "Keep 90 cm from gas meters."
+    assert len(out.notes) == 10  # every section covered once: the others keep their local notes
+    terms = {g.term for g in out.glossary}
+    assert terms == {"LFP", "Backup reserve", "Emergency Stop"}  # supported by the cited page
+    assert "Storm Watch" not in terms  # its page (999) doesn't exist, so it can't be checked
+    assert "Warranty" not in terms  # "25 years" isn't on page 9 (it says 12 years)
+    assert any("left out" in w for w in out.warnings)
     assert out.sticky and any("made locally" in w for w in out.warnings)  # unreadable part â†’ local
     system, user = llm.calls[0]
     assert "untrusted" in system and "[p. 2]" in user

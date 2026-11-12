@@ -62,6 +62,43 @@ def clean_text(text: str, boilerplate: set[str] | None = None) -> str:
     return "\n\n".join(paragraphs)
 
 
+_ENDS_SENTENCE = (".", "!", "?", ":")
+
+
+def paragraph_pages(pages: list[PageText]) -> list[PageText]:
+    """Like `clean_pages`, but keeps the line structure that matters for study notes: a short line
+    that doesn't end a sentence (a heading or list item) or a line that does end one closes the
+    paragraph, so "4. Parliament approves the budget" is never glued to the next sentence.
+    Paragraphs are separated by a blank line."""
+    boilerplate = find_boilerplate([p.text for p in pages])
+    out: list[PageText] = []
+    for p in pages:
+        text = p.text.replace("\r\n", "\n").replace("\r", "\n")
+        if boilerplate:
+            edges = {i for i, ln in _edge_lines(text) if _line_key(ln) in boilerplate}
+            text = "\n".join(ln for i, ln in enumerate(text.split("\n")) if i not in edges)
+        text = _HYPHEN_BREAK.sub(r"\1\2", text)
+        lines = [_SPACES.sub(" ", ln).strip() for ln in text.split("\n")]
+        lengths = sorted(len(ln) for ln in lines if ln)
+        typical = lengths[len(lengths) * 3 // 4] if lengths else 0  # a full-width line
+        paragraphs: list[str] = []
+        current: list[str] = []
+        for ln in lines:
+            if not ln:
+                if current:
+                    paragraphs.append(" ".join(current))
+                    current = []
+                continue
+            current.append(ln)
+            if ln.endswith(_ENDS_SENTENCE) or len(ln) < 0.6 * typical:
+                paragraphs.append(" ".join(current))
+                current = []
+        if current:
+            paragraphs.append(" ".join(current))
+        out.append(PageText(page=p.page, text="\n\n".join(paragraphs)))
+    return out
+
+
 def clean_pages(pages: list[PageText]) -> list[PageText]:
     """Clean every page, removing lines that repeat on most pages (running headers/footers)."""
     boilerplate = find_boilerplate([p.text for p in pages])

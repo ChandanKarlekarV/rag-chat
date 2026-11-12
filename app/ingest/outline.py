@@ -17,6 +17,7 @@ from app.schemas import Heading
 _BOLD = 16
 _HAS_LETTER = re.compile(r"[A-Za-z]")
 _MAX_HEADING_CHARS = 90
+TITLE_PAGES = 12  # pages read to guess the title when the PDF has bookmarks
 
 
 @dataclass(frozen=True)
@@ -27,9 +28,11 @@ class _Line:
     bold: bool
 
 
-def _lines(doc: pymupdf.Document) -> list[_Line]:
+def _lines(doc: pymupdf.Document, max_pages: int | None = None) -> list[_Line]:
     out: list[_Line] = []
     for number, page in enumerate(doc, start=1):
+        if max_pages is not None and number > max_pages:
+            break
         for block in page.get_text("dict")["blocks"]:
             if block.get("type") != 0:
                 continue
@@ -84,8 +87,10 @@ def extract_outline(data: bytes) -> tuple[str, list[Heading]]:
             for lvl, title, page, *_ in doc.get_toc()
         ]
         toc = [h for h in toc if h.title and h.page >= 1]
-        if len(toc) >= 2:
-            return meta_title.strip(), toc
+        if len(toc) >= 2:  # bookmarks give the headings; only the first pages are read, for the title
+            first = min(doc.page_count, TITLE_PAGES)
+            title = meta_title.strip() or _title_guess(_lines(doc, first), first)
+            return title, toc
         lines = _lines(doc)
         title = meta_title.strip() or _title_guess(lines, doc.page_count)
         return title, _font_headings(lines, doc.page_count)

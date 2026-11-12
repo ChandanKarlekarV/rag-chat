@@ -39,13 +39,43 @@ from app.schemas import (
     Topic,
 )
 
-MAX_SENTENCES = 2000  # embedding budget per document
+MAX_SENTENCES = 4000  # embedding budget per document (a 500-page book has ~6,000 sentences)
+MAX_BRANCHES = 30  # mind-map branches (one per top-level section)
+NOTES_GROUP = 8  # sections per LLM request when writing notes for a long document
+MIN_ITEMS = {"sticky": 4, "glossary": 3, "flashcards": 4}  # fewer from the model → use the local version
+MAX_ITEMS = {"sticky": 12, "glossary": 20, "flashcards": 16, "flow": 8}  # small models can over-produce
+
+
+_QUESTION_WORDS = {"what", "which", "when", "where", "does", "mean", "means", "many", "much", "long", "called"}
+
+
+def _content(text: str) -> list[str]:
+    """Content words of a text, as 5-letter prefixes (so "plaques"/"plaque", "means"/"meaning" match)."""
+    words = re.findall(r"[a-z0-9]{3,}", text.lower().replace(",", ""))
+    return sorted({w[:5] for w in words if w not in _STOP and w not in _QUESTION_WORDS})
+
+
+def _unique(items: list) -> list:
+    """Drop items whose main text repeats an earlier one (small models repeat themselves)."""
+    seen: set[str] = set()
+    out = []
+    for item in items:
+        data = item.model_dump()
+        key = _norm(str(data.get("text") or data.get("front") or data.get("term") or data.get("title") or data))
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+NOTES_BUDGET = 48  # bullet points in all short notes together, so long books still get short notes
+DUPLICATE_SIM = 0.9  # cosine above which two candidate notes say the same thing
 _PARA = re.compile(r"\n\s*\n")
 _PARA_MARK = "¶"
 _SENTENCE_END = re.compile(r"(?<=[.!?])[\"')\]]?\s+(?=[\"'(\[]?[A-Z0-9])")
 _LEAD_IN = re.compile(
     r"^(however|in addition|additionally|also|moreover|furthermore|note that|please note that|"
-    r"for example|for instance|in this section|as a result|therefore|thus|then)\b,?\s+",
+    r"for example|for instance|in this section|as a result|therefore|thus|then|today|currently)\b,?\s+",
     re.I,
 )
 _NUMBER_UNIT = re.compile(
@@ -54,9 +84,11 @@ _NUMBER_UNIT = re.compile(
     r"seconds?|minutes?|hours?|days?|weeks?|months?|years?|GB|MB|TB|cycles?|times|x)\b)",
     re.I,
 )
+# any quantity: "220 metres", "3,915 people", "609 million cubic metres" (the blank covers number + noun)
+_NUMBER_NOUN = re.compile(r"(?<![\w.,])\d[\d,]*(?:\.\d+)?(?:\s+(?:million|thousand|billion))?\s+[a-z]{3,}\b")
 _DEFINITION = re.compile(
     r"^(?:the |an? )?(?P<term>[A-Za-z][\w'’\-/]*(?:\s+[A-Za-z0-9][\w'’\-/]*){0,4}?)\s+"
-    r"(?:is|are|refers to|means|is defined as|is called|stands for|describes)\s+(?:an?|the|when|how|any|used)\b",
+    r"(?:is|are|refers to|means|is defined as|is called|stands for)\s+(?:an?|the|when|how|any|used)\b",
     re.I,
 )
 _ACRONYM_EXPANSION = re.compile(r"\b((?:[A-Z][\w-]+\s+){1,6}[A-Z][\w-]+)\s+\(([A-Z][A-Z0-9]{1,7})\)")
@@ -160,7 +192,7 @@ _STOP = set(
     ]
 )
 TONES = 8  # topic colours in the UI
-NOTE_CHARS = 220
+NOTE_CHARS = 170
 STICKY_CHARS = 170
 LEAF_CHARS = 42
 
@@ -211,8 +243,52 @@ def _norm(text: str) -> str:
 
 
 def _clean_heading(title: str) -> str:
-    """'3. Installation Requirements' → 'Installation Requirements'."""
-    return re.sub(r"^\s*(?:chapter|section|part)?\s*[\dIVXivx]+(?:\.\d+)*[.)]?\s+", "", title).strip() or title.strip()
+    """'3. Installation Requirements' / 'Chapter 4. Lakes' → 'Installation Requirements' / 'Lakes'."""
+    cleaned = re.sub(
+        r"^\s*(?:chapter|section|part|unit|lesson)?\s*[\dIVXivx]+(?:\.\d+)*[.):]?\s+",
+        "",
+        title,
+        flags=re.I,
+    )
+    return cleaned.strip() or title.strip()
+
+
+_ANAPHORA = re.compile(r"^(it|its|this|these|those|they|their|them|he|she|his|her|such|there|both|each)\b", re.I)
+_INLINE_LIST = re.compile(r"(?:^|[\s:])\d{1,2}\.\s+[A-Z]|\s\d{1,2}\.$")
+_PARENS = re.compile(r"\s*\([^()]{0,60}\)")
+
+
+def template_key(sentence: str) -> str:
+    """The sentence's pattern with names and numbers blanked, to spot boilerplate that repeats with
+    different names ("The X Bridge is located in X province, # kilometres from X")."""
+    words = sentence.split()
+    out = [words[0].lower()] if words else []
+    for w in words[1:]:
+        out.append("#" if any(ch.isdigit() for ch in w) else "X" if w[:1].isupper() else w.lower())
+    return " ".join(out)
+
+
+def skeleton(sentence: str, section_title: str) -> str:
+    """`template_key` with the section's own topic words removed, so "A heritage bridge is a bridge…"
+    (Bridges) and "A heritage lake is a lake…" (Lakes) count as the same point."""
+    stems = {w[:4] for w in _norm(section_title).split() if len(w) > 3}
+    return " ".join(w for w in template_key(sentence).split() if w[:4] not in stems)
+
+
+def _word_set(text: str) -> frozenset[str]:
+    return frozenset(re.sub(r"\d", "#", w) for w in re.findall(r"[a-z0-9']+", text.lower()))
+
+
+def same_point(a: frozenset[str], b: frozenset[str], threshold: float = 0.75) -> bool:
+    """Two sentences that share most of their words make the same point (one noun or number swapped)."""
+    return bool(a and b) and len(a & b) / len(a | b) >= threshold
+
+
+def condense(text: str, limit: int) -> str:
+    """A short-note version of a sentence: lead-ins and short asides in brackets removed, then cut
+    at a clause boundary if still long. Words are only removed, never changed."""
+    text = _PARENS.sub("", " ".join(text.split()))
+    return shorten(text, limit)
 
 
 def shorten(text: str, limit: int) -> str:
@@ -244,14 +320,20 @@ def _sentences(text: str) -> list[str]:
     out: list[str] = []
     for para in _PARA.sub(_PARA_MARK, text).split(_PARA_MARK):
         para = " ".join(para.split())
-        if para:
-            out += [s.strip() for s in _SENTENCE_END.split(para) if s.strip()]
+        if not para or _LIST_ITEM.match(para) or para.endswith(":"):
+            continue  # list items and list headings: the flowchart reads those, notes don't
+        out += [s.strip() for s in _SENTENCE_END.split(para) if s.strip()]
     return out
+
+
+_LIST_ITEM = re.compile(r"^(?:\(?\d{1,2}[.)]|[•▪◦\-–*])\s")
 
 
 def _is_prose(sentence: str) -> bool:
     words = sentence.split()
     if not (5 <= len(words) <= 70) or not (30 <= len(sentence) <= 450):
+        return False
+    if _INLINE_LIST.search(sentence):  # a numbered list flattened into one line (flows read those)
         return False
     letters = sum(ch.isalpha() for ch in sentence)
     return letters / max(len(sentence), 1) > 0.55 and sentence[0].isalnum()
@@ -341,6 +423,7 @@ def score_sentences(sections: list[Section], embedder: SentenceEmbedder) -> np.n
     doc_c = vecs.mean(axis=0)
     doc_c /= np.linalg.norm(doc_c) + 1e-9
     sec_ids = np.array([s.section for s in sents])
+    templates = Counter(template_key(s.text) for s in sents)
     for sec_id in set(sec_ids.tolist()):
         rows = np.where(sec_ids == sec_id)[0]
         c = vecs[rows].mean(axis=0)
@@ -348,7 +431,17 @@ def score_sentences(sections: list[Section], embedder: SentenceEmbedder) -> np.n
         for r in rows:
             s = sents[r]
             s.score = 0.6 * float(vecs[r] @ c) + 0.25 * float(vecs[r] @ doc_c) + 0.15 * _cue(s.text)
+            s.score -= _penalty(s.text, templates[template_key(s.text)])
     return vecs
+
+
+def _penalty(text: str, template_count: int) -> float:
+    """Sentences that make poor notes: they start with a pronoun ("It was founded…" means nothing out of
+    context) or follow a pattern repeated across the document (boilerplate with names swapped)."""
+    p = 0.3 if _ANAPHORA.match(text) else 0.0
+    if template_count > 2:
+        p += min(0.3, 0.06 * math.log2(template_count))
+    return p
 
 
 def all_sentences(sections: list[Section]) -> list[Sentence]:
@@ -397,7 +490,7 @@ def find_terms(sents: list[Sentence], title_words: set[str], limit: int = 16) ->
         words = key.split()
         if not words or words[0] in _PRONOUNS or all(w in _STOP for w in words) or len(raw) < 2:
             return None
-        if len(words) == 1 and key in title_words:
+        if (len(words) == 1 and key in title_words) or _STRUCTURAL & set(words):
             return None
         t = terms.setdefault(key, Term(raw[0].upper() + raw[1:]))
         t.weight += weight
@@ -422,17 +515,36 @@ def find_terms(sents: list[Sentence], title_words: set[str], limit: int = 16) ->
             add(phrase, 1.0, s)
     ranked = sorted(
         (t for t in terms.values() if t.weight >= 2 or t.definition is not None),
-        key=lambda t: (t.weight + 0.5 * len(t.sections), t.definition is not None),
+        # terms the document defines come first; frequent names without a definition only fill up
+        key=lambda t: (t.definition is not None, t.weight + 0.5 * len(t.sections)),
         reverse=True,
     )
     out: list[Term] = []
+    seen_definitions: set[str] = set()
     for t in ranked:
         if any(_norm(t.term) in _norm(o.term) or _norm(o.term) in _norm(t.term) for o in out):
             continue
+        if t.definition is not None:
+            # "A heritage bridge is a bridge listed…" and "A heritage lake is a lake listed…" are one entry
+            term_words = set(_norm(t.term).split())
+            sig = " ".join(w for w in template_key(t.definition.text).split() if w not in term_words)
+            if sig in seen_definitions:
+                continue
+            seen_definitions.add(sig)
         out.append(t)
         if len(out) >= limit:
             break
     return out
+
+
+_STRUCTURAL = {"chapter", "section", "page", "figure", "table", "part", "appendix", "unit", "lesson", "contents"}
+
+
+def _sentence_about(term: str, sents: list[Sentence]) -> Sentence | None:
+    """The best sentence whose subject is the term ("Storm Watch is…", "The Link gateway stores…")."""
+    pattern = re.compile(rf"^(?:the |an? )?{re.escape(term)}\b", re.I)
+    hits = [s for s in sents if pattern.match(s.text)]
+    return max(hits, key=lambda s: s.score) if hits else None
 
 
 def section_keyphrases(sections: list[Section], title_words: set[str], per_section: int = 3) -> list[list[str]]:
@@ -468,6 +580,8 @@ def section_keyphrases(sections: list[Section], title_words: set[str], per_secti
             if set(p) <= title_words or any(text in q.lower() or q.lower() in text for q in picked):
                 continue
             if len(p) == 1 and wc[p[0]] < 2:
+                continue
+            if n >= 4 and min(df[w] for w in p) > n / 2:  # in most sections: generic, not typical of this one
                 continue
             picked.append(text[0].upper() + text[1:])
             if len(picked) >= per_section:
@@ -558,7 +672,7 @@ def _best_sentence_with(term: str, sents: list[Sentence]) -> Sentence | None:
 # ---------------------------------------------------------------- flows
 
 
-def find_flows(raw_pages: Sequence[PageText], headings: Sequence[Heading], limit: int = 4) -> list[Flow]:
+def find_flows(raw_pages: Sequence[PageText], headings: Sequence[Heading], limit: int = 60) -> list[Flow]:
     """Numbered step lists (1. … 2. … 3. …) found in the raw page text; headings are ignored."""
     heading_keys = {_norm(h.title) for h in headings}
     flows: list[Flow] = []
@@ -617,7 +731,24 @@ def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def find_procedures(sections: list[Section], limit: int = 4) -> list[Flow]:
+def dedupe_flows(flows: list[Flow]) -> list[Flow]:
+    """Keep one copy of diagrams with the same steps (a book may repeat a procedure in every
+    chapter with only a noun changed); the kept one says how many times it appears."""
+    seen: dict[str, Flow] = {}
+    counts: Counter[str] = Counter()
+    for f in flows:
+        sig = f.kind + "|" + "|".join(template_key(s.text) for s in f.steps)
+        counts[sig] += 1
+        seen.setdefault(sig, f)
+    out: list[Flow] = []
+    for sig, f in seen.items():
+        extra = counts[sig] - 1
+        title = f"{f.title} (the same in {extra} other place{'s' if extra > 1 else ''})" if extra else f.title
+        out.append(f.model_copy(update={"title": title[:200]}))
+    return out
+
+
+def find_procedures(sections: list[Section], limit: int = 60) -> list[Flow]:
     """Procedures written as one sentence: "To restart the system, switch off…, wait…, then…".
     A following "If …" sentence (what to do when it doesn't work) becomes the last step."""
     flows: list[Flow] = []
@@ -639,7 +770,7 @@ def find_procedures(sections: list[Section], limit: int = 4) -> list[Flow]:
     return flows
 
 
-def find_rules(sections: list[Section], limit: int = 4) -> list[Flow]:
+def find_rules(sections: list[Section], limit: int = 60) -> list[Flow]:
     """Condition → outcome diagrams: "When the grid fails, …" and "A solid red light means …"."""
     flows: list[Flow] = []
     for sec in sections:
@@ -690,19 +821,14 @@ class LocalStudyBuilder:
         index = {id(s): i for i, s in enumerate(sents)}
         title_words = {w for w in _norm(title).split() if w not in _STOP}
         terms = find_terms(sents, title_words)
-        picks: dict[int, list[Sentence]] = {}
-        for sec_id, sec in enumerate(sections):
-            rows = [index[id(s)] for s in sec.sentences]
-            k = max(2, min(6, round(len(rows) / 5) or 2))
-            chosen = sorted(mmr(rows, scores, vecs, k), key=lambda r: (sents[r].page, r))
-            picks[sec_id] = [sents[r] for r in chosen]
+        picks = self._pick_notes(sections, sents, scores, vecs, index)
         out = StudyContent()
         if "notes" in kinds:
             out.notes = [
                 NoteSection(
                     title=sec.title,
                     page=sec.page,
-                    points=[NoteItem(text=shorten(s.text, NOTE_CHARS), page=s.page) for s in picks[i]],
+                    points=[NoteItem(text=condense(s.text, NOTE_CHARS), page=s.page) for s in picks[i]],
                 )
                 for i, sec in enumerate(sections)
                 if picks[i]
@@ -719,7 +845,7 @@ class LocalStudyBuilder:
         if "flow" in kinds or "notes" in kinds:  # notes show the diagrams of their section inline
             numbered = find_flows(raw_pages, headings)
             found = numbered + find_procedures(sections) + find_rules(sections)
-            out.flows = sorted(found, key=lambda f: (f.steps[0].page or 0, f.kind != "process"))[:8]
+            out.flows = dedupe_flows(sorted(found, key=lambda f: (f.steps[0].page or 0, f.kind != "process")))[:8]
             if "flow" in kinds and not out.flows:
                 out.warnings.append(
                     "No step-by-step process or if-then rules were found in this document. "
@@ -729,10 +855,43 @@ class LocalStudyBuilder:
             out.flashcards = self._flashcards(glossary, picks)
         return out
 
+    @staticmethod
+    def _pick_notes(
+        sections: list[Section], sents: list[Sentence], scores: np.ndarray, vecs: np.ndarray, index: dict[int, int]
+    ) -> dict[int, list[Sentence]]:
+        """The note points of each section: a fixed budget shared by all sections (so a 500-page book
+        still gets short notes), chosen for centrality and variety, and never repeating a point
+        already made in an earlier section."""
+        per_section = max(2, min(5, round(NOTES_BUDGET / max(len(sections), 1))))
+        taken: list[int] = []
+        skeletons: set[str] = set()
+        taken_words: list[frozenset[str]] = []
+        picks: dict[int, list[Sentence]] = {}
+        for sec_id, sec in enumerate(sections):
+            rows = [index[id(s)] for s in sec.sentences]
+            rows = [
+                r
+                for r in rows
+                if skeleton(sents[r].text, sec.title) not in skeletons
+                and not any(same_point(_word_set(sents[r].text), w) for w in taken_words)
+            ]
+            if taken and rows:
+                sim = (vecs[rows] @ vecs[taken].T).max(axis=1)
+                rows = [r for r, x in zip(rows, sim, strict=True) if x < DUPLICATE_SIM]
+            # "It was founded in…" means nothing out of context: never a note point
+            rows = [r for r in rows if not _ANAPHORA.match(sents[r].text)]
+            k = min(per_section, max(1, round(len(rows) / 4)))
+            chosen = sorted(mmr(rows, scores, vecs, k), key=lambda r: (sents[r].page, r))
+            taken += chosen
+            skeletons |= {skeleton(sents[r].text, sec.title) for r in chosen}
+            taken_words += [_word_set(sents[r].text) for r in chosen]
+            picks[sec_id] = [sents[r] for r in chosen]
+        return picks
+
     def _glossary(self, terms: list[Term], sents: list[Sentence]) -> list[GlossaryTerm]:
         items: list[GlossaryTerm] = []
         for t in terms:
-            source = t.definition or (_best_sentence_with(t.term, sents) if t.weight >= 3 else None)
+            source = t.definition or (_sentence_about(t.term, sents) if t.weight >= 3 else None)
             if source is None:
                 continue
             definition = shorten(source.text, NOTE_CHARS)
@@ -746,9 +905,15 @@ class LocalStudyBuilder:
     ) -> list[StickyNote]:
         boost = np.array([0.15 * _cue(s.text) for s in sents], dtype=np.float32)
         n = min(12, max(6, 2 * len(sections)))
-        chosen = sorted(
-            mmr(list(range(len(sents))), scores + boost, vecs, n, lam=0.6), key=lambda r: (sents[r].page, r)
-        )
+        pool: list[int] = []  # one sentence per point (wording and meaning), best first
+        words: list[frozenset[str]] = []
+        for r in np.argsort(-(scores + boost)).tolist()[:600]:
+            ws = _word_set(sents[r].text)
+            if any(same_point(ws, w) for w in words) or (pool and float((vecs[pool] @ vecs[r]).max()) >= DUPLICATE_SIM):
+                continue
+            words.append(ws)
+            pool.append(r)
+        chosen = sorted(mmr(pool, scores + boost, vecs, n, lam=0.6), key=lambda r: (sents[r].page, r))
         notes: list[StickyNote] = []
         for r in chosen:
             s = sents[r]
@@ -770,22 +935,24 @@ class LocalStudyBuilder:
         picks: dict[int, list[Sentence]],
     ) -> MindNode:
         children: list[MindNode] = []
-        for i, sec in enumerate(sections[:10]):
+        most = 4 if len(sections) <= 12 else 2  # big books: every chapter, fewer details each
+        for i, sec in enumerate(sections[:MAX_BRANCHES]):
             leaves: list[MindNode] = []
-            for h in sec.subheadings[:5]:
+            for h in sec.subheadings[:most]:
                 leaves.append(MindNode(label=_label(_clean_heading(h.title)), page=h.page))
             if not leaves:
                 for t in terms:
-                    if i in t.sections and t.definition is not None and len(leaves) < 2:
+                    common = len(t.sections) > max(2, len(sections) // 2)  # in most chapters: not typical here
+                    if i in t.sections and t.definition is not None and not common and len(leaves) < min(2, most):
                         leaves.append(MindNode(label=_label(t.term), page=t.definition.page))
                 for p in phrases[i] if i < len(phrases) else []:
-                    if len(leaves) < 4 and not any(
+                    if len(leaves) < most and not any(
                         _norm(p) in _norm(x.label) or _norm(x.label) in _norm(p) for x in leaves
                     ):
                         hit = _best_sentence_with(p, sec.sentences)
                         leaves.append(MindNode(label=_label(p), page=hit.page if hit else sec.page))
             if len(leaves) < 2:
-                for s in picks.get(i, [])[: 3 - len(leaves)]:
+                for s in picks.get(i, [])[: 2 - len(leaves)]:
                     leaves.append(MindNode(label=_label(shorten(s.text, 80)), page=s.page))
             children.append(MindNode(label=_label(sec.title), page=sec.page, children=leaves))
         return MindNode(label=_label(title, 48), page=1, children=children)
@@ -802,7 +969,7 @@ class LocalStudyBuilder:
             cards.append(Flashcard(front=front, back=g.definition, page=g.page))
         for sents in picks.values():
             for s in sents:
-                m = _NUMBER_UNIT.search(s.text)
+                m = _NUMBER_UNIT.search(s.text) or _NUMBER_NOUN.search(s.text)
                 if not m or len(cards) >= 14:
                     continue
                 short = shorten(s.text, NOTE_CHARS)
@@ -944,16 +1111,29 @@ class LLMStudyBuilder:
         score_sentences(sections, self.local.embedder)
         context = build_context(sections, local.flows, self.context_chars)
         max_page = max((p.page for p in pages), default=1)
+        self._page_text = {p.page: _norm(p.text).replace(",", "") for p in pages}
+        self._sentences = {  # every sentence and list line on each page, for checking the model's output
+            p.page: [_norm(s).replace(",", "") for para in _PARA.split(p.text) for s in _SENTENCE_END.split(para)]
+            for p in pages
+        }
+        self.removed = 0
         out = StudyContent(warnings=[w for w in local.warnings if "No step-by-step" not in w], topics=local.topics)
         out.flows = local.flows  # diagrams shown inside the notes, unless the model writes the flowchart
         written: list[str] = []
         for kind in kinds:
-            if self._fill(out, kind, title, context, max_page):
+            if kind == "notes":
+                filled = self._fill_notes_in_groups(out, local, sections, title, max_page)
+            else:
+                filled = self._fill(out, kind, title, context, max_page)
+            if filled:
                 written.append(kind)
             else:
                 self._use_local(out, local, kind)
                 if kind != "flow" or local.flows:  # an empty flowchart gets its own message below
-                    out.warnings.append(f"{KIND_NAMES[kind]}: made locally (the model's version couldn't be read).")
+                    out.warnings.append(
+                        f"{KIND_NAMES[kind]}: made locally "
+                        "(the model's version couldn't be read or wasn't backed by the pages)."
+                    )
         if "flow" in kinds and "flow" in written:
             # keep the verbatim if-then diagrams found locally next to the model's processes
             out.flows = out.flows + [f for f in local.flows if f.kind == "conditions"]
@@ -961,6 +1141,12 @@ class LLMStudyBuilder:
             note.tone = i % TONES + 1
         if "flow" in kinds and not out.flows:
             out.warnings.append("No step-by-step process was found in this document.")
+        if self.removed:
+            out.warnings.append(
+                f"{self.removed} item{'s' if self.removed > 1 else ''} the model wrote "
+                f"{'were' if self.removed > 1 else 'was'} left out: {'their' if self.removed > 1 else 'its'} "
+                "numbers, names or wording weren't found on the page cited."
+            )
         if not written:
             self.label = f"{self.local.label} ({self.llm.model} couldn't produce readable output)"
         elif len(written) < len(kinds):
@@ -986,10 +1172,117 @@ class LLMStudyBuilder:
             return out.mindmap is not None
         key = _FIELDS.get(kind, kind)
         items = _items(data, key, max_page)
-        if items is None or (not items and kind != "flow"):
-            return False
-        setattr(out, key, items)
+        items = self._grounded(kind, _unique(items)) if items is not None else None
+        if items is None or (kind != "flow" and len(items) < MIN_ITEMS.get(kind, 1)):
+            return False  # unreadable, or too thin to be worth more than the local version
+        setattr(out, key, items[: MAX_ITEMS.get(kind, len(items))])
         return True
+
+    def _supported(self, text: str, page: int | None) -> bool:
+        """Is this model-written text backed by the page it cites (or the pages either side)?
+
+        Every number and every capitalised name in it must appear there, and at least half of its
+        content words. This catches invented figures, names and pages; it can't catch a sentence
+        that recombines words from the page into a wrong claim, which is why notes made by a model
+        are labelled as such and keep their page numbers for checking.
+        """
+        if page is None:
+            return False
+        source = " ".join(self._page_text.get(p, "") for p in (page - 1, page, page + 1))
+        clean = text.replace(",", "")
+        if any(n not in source for n in re.findall(r"\d+(?:\.\d+)?", clean)):
+            return False
+        names = [w.lower() for w in re.findall(r"(?<!^)(?<![.!?]\s)\b[A-Z][a-zA-Z]{2,}", clean)]
+        if any(n not in source for n in names):
+            return False
+        return self._in_one_sentence([_content(text)], page, 0.6)
+
+    def _in_one_sentence(self, groups: list[list[str]], page: int, threshold: float) -> bool:
+        """Is there one sentence on the cited page (or either side) that contains at least
+        `threshold` of every word group? For a flashcard the groups are the question's and the
+        answer's words, so a card can't pair a question with an answer from another sentence."""
+        groups = [g for g in groups if g]
+        if not groups:
+            return True
+        for p in (page, page - 1, page + 1):
+            for sentence in self._sentences.get(p, ()):
+                if all(sum(w in sentence for w in g) / len(g) >= threshold for g in groups):
+                    return True
+        return False
+
+    def _grounded(self, kind: str, items: list) -> list:
+        """Drop model-written items whose facts aren't on the cited page (counted for a warning)."""
+        kept = []
+        for item in items:
+            if kind == "notes":
+                points = [p for p in item.points if self._supported(p.text, p.page or item.page)]
+                self.removed += len(item.points) - len(points)
+                if points:
+                    kept.append(item.model_copy(update={"points": points}))
+                continue
+            text = {"sticky": "text", "glossary": "definition", "flashcards": "back"}.get(kind)
+            if text is None:  # flows: every step must be supported
+                ok = all(self._supported(s.text, s.page) for s in item.steps)
+            else:
+                ok = self._supported(getattr(item, text), item.page)
+            if ok and kind == "flashcards":  # question and answer must come from the same sentence
+                ok = self._in_one_sentence([_content(item.front), _content(item.back)], item.page, 0.6)
+            if ok and kind == "glossary":
+                ok = self._in_one_sentence([_content(item.term), _content(item.definition)], item.page, 0.5)
+            self.removed += not ok
+            if ok:
+                kept.append(item)
+        return kept
+
+    def _fill_notes_in_groups(
+        self, out: StudyContent, local: StudyContent, sections: list[Section], title: str, max_page: int
+    ) -> bool:
+        """Short notes, a few sections per request so each reply stays short enough to be complete.
+
+        The model's notes are mapped back to the document's real sections (by title, else by page)
+        and held to the same points-per-section budget as the local notes; a section the model
+        skipped or got wrong keeps its local notes, so every section is covered exactly once.
+        """
+        per_section = max(2, min(5, round(NOTES_BUDGET / max(len(sections), 1))))
+        by_section: dict[int, NoteSection] = {}
+        any_written = False
+        budget = max(2000, self.context_chars // 2)
+        for start in range(0, len(sections), NOTES_GROUP):
+            group = list(range(start, min(start + NOTES_GROUP, len(sections))))
+            part = StudyContent()
+            if not self._fill(part, "notes", title, build_context([sections[i] for i in group], [], budget), max_page):
+                continue
+            for note in part.notes:
+                idx = self._section_of(note, sections, group)
+                if idx is None:
+                    continue
+                sec = sections[idx]
+                old = by_section.get(idx)
+                points = (old.points if old else []) + note.points
+                by_section[idx] = NoteSection(title=sec.title, page=sec.page, points=points[:per_section])
+                any_written = True
+        local_by_page = {(n.page, _norm(n.title)): n for n in local.notes}
+        notes = []
+        for i, sec in enumerate(sections):
+            note = by_section.get(i) or local_by_page.get((sec.page, _norm(sec.title)))
+            if note is not None:
+                notes.append(note)
+        out.notes = notes
+        return any_written
+
+    @staticmethod
+    def _section_of(note: NoteSection, sections: list[Section], group: list[int]) -> int | None:
+        """Which section of this request's group the model's note belongs to."""
+        key = _norm(note.title)
+        for i in group:
+            title = _norm(sections[i].title)
+            if key and (key in title or title in key):
+                return i
+        page = note.page or next((p.page for p in note.points if p.page), None)
+        if page is None:
+            return None
+        owner = [i for i in group if sections[i].page <= page]
+        return owner[-1] if owner else None
 
     @staticmethod
     def _use_local(out: StudyContent, local: StudyContent, kind: StudyKind) -> None:

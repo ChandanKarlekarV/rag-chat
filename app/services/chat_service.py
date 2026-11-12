@@ -28,6 +28,7 @@ log = logging.getLogger("rag-chat.chat")
 
 FALLBACK_MESSAGE = "I couldn't find this in your documents."
 NO_READY_DOCS = "Upload a PDF to start. Questions are answered from your documents only."
+STILL_PROCESSING = "Your PDF is still being prepared. Ask again in a few seconds (large books take up to a minute)."
 SNIPPET_CHARS = 300
 TITLE_CHARS = 60
 
@@ -107,8 +108,12 @@ class ChatService:
             raise AppError("empty_question", "Type a question first.")
         with self.db.session() as s:
             ready = set(DocumentRepo(s).ready_ids(user.id))
+            docs = DocumentRepo(s).for_user(user.id) if not ready else []
+            processing = any(d.status == "processing" for d in docs)
             if conversation_id and ConversationRepo(s).get(user.id, conversation_id) is None:
                 raise NotFound("not_found", "This conversation no longer exists. Start a new one.")
+        if not ready and processing:
+            raise AppError("not_ready", STILL_PROCESSING)
         if not ready:
             raise AppError("no_documents", NO_READY_DOCS)
         scope = None

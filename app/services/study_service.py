@@ -11,7 +11,7 @@ from app.generation.base import AnswerMode
 from app.generation.generative import GenerativeProvider
 from app.generation.llm_base import LLMError
 from app.generation.study import LLMStudyBuilder, LocalStudyBuilder, SentenceEmbedder
-from app.ingest.cleaner import clean_pages
+from app.ingest.cleaner import paragraph_pages
 from app.ingest.loader import IngestError, load_pdf
 from app.ingest.outline import document_title, extract_outline
 from app.schemas import StudyPack, StudyRequest
@@ -51,7 +51,7 @@ class StudyService:
             raw = load_pdf(data, filename)
         except IngestError as exc:
             raise AppError("invalid_file", str(exc)) from exc
-        pages = clean_pages(raw)
+        pages = paragraph_pages(raw)  # cleaned, with list items and headings kept as their own lines
         meta_title, headings = extract_outline(data)
         title = document_title(meta_title, filename)
         kinds = list(dict.fromkeys(req.kinds))  # unique, in the order asked

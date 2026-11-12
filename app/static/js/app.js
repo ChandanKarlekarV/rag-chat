@@ -305,7 +305,7 @@ js("doc-list").addEventListener("click", async (e) => {
 async function handleFiles(files) {
   for (const file of files) {
     if (!/\.pdf$/i.test(file.name)) { toast(`"${file.name}" isn't a PDF. Choose a .pdf file.`, "error"); continue; }
-    if (file.size > 20 * 1024 * 1024) { toast(`"${file.name}" is larger than 20 MB.`, "error"); continue; }
+    if (file.size > 100 * 1024 * 1024) { toast(`"${file.name}" is larger than 100 MB.`, "error"); continue; }
     const tmp = `up-${Math.random().toString(36).slice(2)}`;
     uploads.set(tmp, { name: file.name, pct: 0 });
     renderDocs();

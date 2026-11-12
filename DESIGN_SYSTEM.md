@@ -146,7 +146,7 @@ Define tokens once as CSS custom properties in `:root` / `[data-theme="dark"]`, 
 | **Button** | Variants: primary (solid teal, inverse text), secondary (surface + border), ghost (text only), danger. Sizes: md 40px, sm 32px. Loading shows a spinner and `aria-busy`. One primary per view. |
 | **Input / Textarea** | 40px min, 1px border, radius-md, label above (never placeholder-only), helper text `--text-sm` muted, error text danger + `aria-invalid` + message tied by `aria-describedby`. |
 | **Card** | surface, 1px border, radius-md, padding `space-4`. |
-| **Dropzone** | dashed 1.5px border, muted surface; hover/drag-over switches to primary-subtle + primary border; text "Drop a PDF here or choose a file"; shows limits "PDF, up to 20 MB". |
+| **Dropzone** | dashed 1.5px border, muted surface; hover/drag-over switches to primary-subtle + primary border; text "Drop a PDF here or choose a file"; shows limits "PDF, up to 100 MB". |
 | **Document row** | icon + filename (truncate) + meta (pages · date) + status badge + checkbox to include in questions + overflow menu (Delete). Selected = primary-subtle. |
 | **Status badge** | pill, `--text-xs`; Processing (muted + spinner), Ready (success-subtle), Failed (danger-subtle) with a retry link. Never color alone: always an icon or text. |
 | **Chat message** | User: right-aligned, primary-subtle bubble. Assistant: left, no bubble (surface card), citations row beneath, actions (copy, retry) appearing on hover/focus. Max width 72ch. |

@@ -127,6 +127,28 @@ The earlier single-answer version of the Local mode missed one held-out question
 - **The corpus is small and synthetic,** and I wrote the documents and questions. **No system is 100% accurate on every PDF.** What Local mode guarantees is narrower and more useful: it only ever quotes your document verbatim, with a link to the page so you can check, and it declines when it isn't confident.
 - **Ollama and Claude rows** fill in automatically when `evaluate.py` can reach them (Ollama running, `ANTHROPIC_API_KEY` set).
 
+### A 520-page book (`python scripts/evaluate_long.py`)
+
+`scripts/make_long_pdf.py` generates *The Meridian Almanac*: 26 chapters, 520 pages and 1,560 named places, each with its own province, founder, founding year, staff count and measurement. It is a hard case on purpose: every page looks alike, with the same sentence patterns and different names, and it has bookmarks like a real book. There are 40 questions with answers from page 14 to page 519, plus 6 about places that aren't in the book. RTX 5070 Laptop GPU:
+
+| Step | Result |
+|---|---|
+| Upload + read + split + embed + index | 520 pages → 814 chunks in **3 s** |
+| Questions, Local mode | **40/40 correct fact, 40/40 cited the right page, 6/6 refused**; median 162 ms |
+| Asking while it is still processing | a clear "still being prepared, ask again in a few seconds" (no wrong answer) |
+| Study material, Local mode, all six kinds | **2.8 s**: 26 sections, **52 short-note points (653 words)**, 12 sticky notes, a 26-branch mind map, 5 diagrams, 14 flashcards |
+| Study material, Ollama `llama3.2` (3B), all six kinds | about 100–140 s; notes for every chapter within the same budget; 35–48 model-written items per run dropped by the page check (see below) |
+
+What changed to make long books work. Each fix answers something the first run of this test showed:
+- **Short notes stay short.** All sections share a budget of about 48 points, at 2 to 5 per section. Points are cut at a clause boundary and drop short bracketed asides. The first run gave 156 points and 2,100 words; now it gives 52 points and 653 words.
+- **No useless or repeated points.** Sentences that start with a pronoun ("It was founded in…") are never used as notes, because they mean nothing out of context. Boilerplate repeated with names swapped is scored down. A point already made in an earlier chapter, even with one noun changed, isn't repeated.
+- **Lists stay lists.** Paragraphs are rebuilt from the PDF's own lines, so "4. Parliament approves the budget" is never glued to the next sentence. Numbered lists feed the flowcharts, not the notes.
+- **Diagrams are merged.** A procedure repeated in 26 chapters becomes one flowchart marked "the same in 25 other places".
+- **Every chapter is on the mind map** (up to 30 branches, fewer details each).
+- **Key terms are real definitions,** not frequent names.
+- **Model-written study material is checked against the book.** Ollama and API key mode write notes a few chapters at a time and map them back to the real chapters. Every item must cite a page, every number and name in it must be on that page, and its words must come from a single sentence there. For a flashcard, the question and the answer must both match that same sentence. This caught a real error from `llama3.2`: a card saying a blue plaque means "closed for restoration", when the book says a blue plaque means open only in summer. Items that fail are dropped and counted in a warning. A kind with too few verified items falls back to the local, quoted version.
+- **Uploads up to 100 MB** (was 20 MB), since long textbooks with images are large.
+
 ### How the QA model was chosen (development set, earlier single-answer pipeline, CPU)
 
 | QA model | Parameters | Answerable correct | Unanswerable refused | Overall |
@@ -152,7 +174,8 @@ It runs the full pipeline, then a judge model (default `claude-opus-5-5`) grades
 - **Local:** very faithful and terse. It cannot synthesise across passages or rephrase; summaries are excerpts, not essays.
 - **Ollama / Claude:** answers read better and can combine passages, but they can still err. The grounded prompt, the shared gate and the citations constrain that; they don't eliminate it.
 - **Pasted keys:** the flow trusts the user's browser. The server is a pass-through that never keeps keys, which tests check against logs and the database.
-- **Study material:** Local mode's notes are quoted sentences, so they are exact but not condensed; Ollama and API key mode write plainer notes and can describe processes that aren't numbered lists, at the cost of a model call (and, as always with generated text, a chance of error, which the page tags help you check).
+- **Study material on a small local model:** with `llama3.2` (3B), many model-written items fail the page check on long books and fall back to the quoted local version. A larger Ollama model (for example an 8B one, if it fits in your GPU memory next to the app's 2 GB), or API key mode, keeps more of the rewritten text. The page check catches invented numbers, names and mismatched question/answer pairs, but not every possible misreading, so model-written notes stay labelled and keep their page numbers.
+- **Study material:** Local mode's notes are quoted sentences, so they are exact but only lightly condensed (asides and long tails trimmed); Ollama and API key mode write plainer notes and can describe processes that aren't numbered lists, at the cost of a model call (and, as always with generated text, a chance of error, which the page tags help you check).
 - **Ollama on a laptop:** speed depends on the GPU's power state. On battery, Windows can hold an NVIDIA laptop GPU at its lowest clock, and a 3B model then writes only a few words per second. Plug in for full speed. Study material asks for a few thousand words in one reply, so Ollama gets up to 5 minutes before the app says it took too long.
 
 ## Design decisions

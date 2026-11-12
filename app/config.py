@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     redis_url: str = ""  # shared rate limits, ingest progress and per-user locks
     chroma_url: str = ""  # Chroma server instead of the embedded store (required with >1 worker)
 
-    max_upload_mb: int = 20
+    max_upload_mb: int = 100
     max_docs_user: int = 50
     max_docs_guest: int = 10
     guest_ttl_hours: int = 24
