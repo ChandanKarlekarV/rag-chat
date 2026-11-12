@@ -74,15 +74,14 @@ def make_harness(
     **overrides,
 ) -> Iterator[Harness]:
     """`ollama`: None = not configured, True = running, False = configured but unreachable."""
-    overrides.setdefault("min_qa_score", 0.0)
+    # Test defaults; a test's own value for any of them (e.g. a Postgres `database_url`) wins.
+    defaults = {"min_qa_score": 0.0, "min_rerank_score": 0.0, "database_url": ""}
     settings = Settings(
         data_dir=tmp_path,
         anthropic_api_key=server_key,
-        min_rerank_score=0.0,
-        database_url="",
         ollama_enabled=ollama is not None,
         _env_file=None,
-        **overrides,
+        **(defaults | overrides),
     )
     made: list[FakeLLM] = []
 
